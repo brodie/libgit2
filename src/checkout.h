@@ -19,6 +19,7 @@
  */
 extern int git_checkout_iterator(
 	git_iterator *target,
-	const git_checkout_opts *opts);
+	git_index *index,
+	const git_checkout_options *opts);
 
 #endif

@@ -7,8 +7,6 @@
 #ifndef INCLUDE_buffer_h__
 #define INCLUDE_buffer_h__
 
-#include <stdarg.h>
-
 #include "common.h"
 #include "git2/strarray.h"
 #include "git2/buffer.h"
@@ -90,6 +88,7 @@ GIT_INLINE(bool) git_buf_oom(const git_buf *buf)
  */
 int git_buf_sets(git_buf *buf, const char *string);
 int git_buf_putc(git_buf *buf, char c);
+int git_buf_putcn(git_buf *buf, char c, size_t len);
 int git_buf_put(git_buf *buf, const char *data, size_t len);
 int git_buf_puts(git_buf *buf, const char *string);
 int git_buf_printf(git_buf *buf, const char *format, ...) GIT_FORMAT_PRINTF(2, 3);
@@ -100,8 +99,12 @@ void git_buf_truncate(git_buf *buf, size_t len);
 void git_buf_shorten(git_buf *buf, size_t amount);
 void git_buf_rtruncate_at_char(git_buf *path, char separator);
 
+/** General join with separator */
 int git_buf_join_n(git_buf *buf, char separator, int nbuf, ...);
+/** Fast join of two strings - first may legally point into `buf` data */
 int git_buf_join(git_buf *buf, char separator, const char *str_a, const char *str_b);
+/** Fast join of three strings - cannot reference `buf` data */
+int git_buf_join3(git_buf *buf, char separator, const char *str_a, const char *str_b, const char *str_c);
 
 /**
  * Join two strings as paths, inserting a slash between as needed.
@@ -153,7 +156,12 @@ void git_buf_rtrim(git_buf *buf);
 int git_buf_cmp(const git_buf *a, const git_buf *b);
 
 /* Write data as base64 encoded in buffer */
-int git_buf_put_base64(git_buf *buf, const char *data, size_t len);
+int git_buf_encode_base64(git_buf *buf, const char *data, size_t len);
+/* Decode the given bas64 and write the result to the buffer */
+int git_buf_decode_base64(git_buf *buf, const char *base64, size_t len);
+
+/* Write data as "base85" encoded in buffer */
+int git_buf_encode_base85(git_buf *buf, const char *data, size_t len);
 
 /*
  * Insert, remove or replace a portion of the buffer.

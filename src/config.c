@@ -6,7 +6,7 @@
  */
 
 #include "common.h"
-#include "fileops.h"
+#include "sysdir.h"
 #include "config.h"
 #include "git2/config.h"
 #include "git2/sys/config.h"
@@ -130,6 +130,38 @@ int git_config_open_ondisk(git_config **out, const char *path)
 		return -1;
 
 	if ((error = git_config_add_file_ondisk(config, path, GIT_CONFIG_LEVEL_LOCAL, 0)) < 0)
+		git_config_free(config);
+	else
+		*out = config;
+
+	return error;
+}
+
+int git_config_snapshot(git_config **out, git_config *in)
+{
+	int error = 0;
+	size_t i;
+	file_internal *internal;
+	git_config *config;
+
+	*out = NULL;
+
+	if (git_config_new(&config) < 0)
+		return -1;
+
+	git_vector_foreach(&in->files, i, internal) {
+		git_config_backend *b;
+
+		if ((error = internal->file->snapshot(&b, internal->file)) < 0)
+			break;
+
+		if ((error = git_config_add_backend(config, b, internal->level, 0)) < 0) {
+			b->free(b);
+			break;
+		}
+	}
+
+	if (error < 0)
 		git_config_free(config);
 	else
 		*out = config;
@@ -294,23 +326,6 @@ int git_config_add_backend(
 	return 0;
 }
 
-int git_config_refresh(git_config *cfg)
-{
-	int error = 0;
-	size_t i;
-
-	for (i = 0; i < cfg->files.length && !error; ++i) {
-		file_internal *internal = git_vector_get(&cfg->files, i);
-		git_config_backend *file = internal->file;
-		error = file->refresh(file);
-	}
-
-	if (!error && GIT_REFCOUNT_OWNER(cfg) != NULL)
-		git_repository__cvar_cache_clear(GIT_REFCOUNT_OWNER(cfg));
-
-	return error;
-}
-
 /*
  * Loop over all the variables
  */
@@ -458,6 +473,7 @@ int git_config_iterator_glob_new(git_config_iterator **out, const git_config *cf
 	if ((result = regcomp(&iter->regex, regexp, REG_EXTENDED)) < 0) {
 		giterr_set_regex(&iter->regex, result);
 		regfree(&iter->regex);
+		git__free(iter);
 		return -1;
 	}
 
@@ -614,6 +630,36 @@ int git_config_set_string(git_config *cfg, const char *name, const char *value)
 	return error;
 }
 
+int git_config__update_entry(
+	git_config *config,
+	const char *key,
+	const char *value,
+	bool overwrite_existing,
+	bool only_if_existing)
+{
+	int error = 0;
+	const git_config_entry *ce = NULL;
+
+	if ((error = git_config__lookup_entry(&ce, config, key, false)) < 0)
+		return error;
+
+	if (!ce && only_if_existing) /* entry doesn't exist */
+		return 0;
+	if (ce && !overwrite_existing) /* entry would be overwritten */
+		return 0;
+	if (value && ce && ce->value && !strcmp(ce->value, value)) /* no change */
+		return 0;
+	if (!value && (!ce || !ce->value)) /* asked to delete absent entry */
+		return 0;
+
+	if (!value)
+		error = git_config_delete_entry(config, key);
+	else
+		error = git_config_set_string(config, key, value);
+
+	return error;
+}
+
 /***********
  * Getters
  ***********/
@@ -651,6 +697,7 @@ static int get_entry(
 		key = normalized;
 	}
 
+	res = GIT_ENOTFOUND;
 	git_vector_foreach(&cfg->files, i, internal) {
 		if (!internal || !internal->file)
 			continue;
@@ -736,6 +783,17 @@ int git_config_get_bool(int *out, const git_config *cfg, const char *name)
 		return ret;
 
 	return git_config_parse_bool(out, entry->value);
+}
+
+int git_config_get_path(git_buf *out, const git_config *cfg, const char *name)
+{
+	const git_config_entry *entry;
+	int error;
+
+	if ((error = get_entry(&entry, cfg, name, true, GET_ALL_ERRORS)) < 0)
+		return error;
+
+	return git_config_parse_path(out, entry->value);
 }
 
 int git_config_get_string(
@@ -933,83 +991,44 @@ void git_config_iterator_free(git_config_iterator *iter)
 	iter->free(iter);
 }
 
-static int git_config__find_file_to_path(
-	char *out, size_t outlen, int (*find)(git_buf *buf))
+int git_config_find_global(git_buf *path)
 {
-	int error = 0;
-	git_buf path = GIT_BUF_INIT;
-
-	if ((error = find(&path)) < 0)
-		goto done;
-
-	if (path.size >= outlen) {
-		giterr_set(GITERR_NOMEMORY, "Buffer is too short for the path");
-		error = GIT_EBUFS;
-		goto done;
-	}
-
-	git_buf_copy_cstr(out, outlen, &path);
-
-done:
-	git_buf_free(&path);
-	return error;
+	git_buf_sanitize(path);
+	return git_sysdir_find_global_file(path, GIT_CONFIG_FILENAME_GLOBAL);
 }
 
-int git_config_find_global_r(git_buf *path)
+int git_config_find_xdg(git_buf *path)
 {
-	return git_futils_find_global_file(path, GIT_CONFIG_FILENAME_GLOBAL);
+	git_buf_sanitize(path);
+	return git_sysdir_find_xdg_file(path, GIT_CONFIG_FILENAME_XDG);
 }
 
-int git_config_find_global(char *global_config_path, size_t length)
+int git_config_find_system(git_buf *path)
 {
-	return git_config__find_file_to_path(
-		global_config_path, length, git_config_find_global_r);
-}
-
-int git_config_find_xdg_r(git_buf *path)
-{
-	return git_futils_find_xdg_file(path, GIT_CONFIG_FILENAME_XDG);
-}
-
-int git_config_find_xdg(char *xdg_config_path, size_t length)
-{
-	return git_config__find_file_to_path(
-		xdg_config_path, length, git_config_find_xdg_r);
-}
-
-int git_config_find_system_r(git_buf *path)
-{
-	return git_futils_find_system_file(path, GIT_CONFIG_FILENAME_SYSTEM);
-}
-
-int git_config_find_system(char *system_config_path, size_t length)
-{
-	return git_config__find_file_to_path(
-		system_config_path, length, git_config_find_system_r);
+	git_buf_sanitize(path);
+	return git_sysdir_find_system_file(path, GIT_CONFIG_FILENAME_SYSTEM);
 }
 
 int git_config__global_location(git_buf *buf)
 {
 	const git_buf *paths;
 	const char *sep, *start;
-	size_t len;
 
-	if (git_futils_dirs_get(&paths, GIT_FUTILS_DIR_GLOBAL) < 0)
+	if (git_sysdir_get(&paths, GIT_SYSDIR_GLOBAL) < 0)
 		return -1;
 
 	/* no paths, so give up */
-	if (git_buf_len(paths) == 0)
+	if (!paths || !git_buf_len(paths))
 		return -1;
 
-	start = git_buf_cstr(paths);
-	sep = strchr(start, GIT_PATH_LIST_SEPARATOR);
+	/* find unescaped separator or end of string */
+	for (sep = start = git_buf_cstr(paths); *sep; ++sep) {
+		if (*sep == GIT_PATH_LIST_SEPARATOR &&
+			(sep <= start || sep[-1] != '\\'))
+			break;
+	}
 
-	if (sep)
-		len = sep - start;
-	else
-		len = paths->size;
-
-	if (git_buf_set(buf, start, len) < 0)
+	if (git_buf_set(buf, start, (size_t)(sep - start)) < 0)
 		return -1;
 
 	return git_buf_joinpath(buf, buf->ptr, GIT_CONFIG_FILENAME_GLOBAL);
@@ -1024,16 +1043,16 @@ int git_config_open_default(git_config **out)
 	if ((error = git_config_new(&cfg)) < 0)
 		return error;
 
-	if (!git_config_find_global_r(&buf) || !git_config__global_location(&buf)) {
+	if (!git_config_find_global(&buf) || !git_config__global_location(&buf)) {
 		error = git_config_add_file_ondisk(cfg, buf.ptr,
 			GIT_CONFIG_LEVEL_GLOBAL, 0);
 	}
 
-	if (!error && !git_config_find_xdg_r(&buf))
+	if (!error && !git_config_find_xdg(&buf))
 		error = git_config_add_file_ondisk(cfg, buf.ptr,
 			GIT_CONFIG_LEVEL_XDG, 0);
 
-	if (!error && !git_config_find_system_r(&buf))
+	if (!error && !git_config_find_system(&buf))
 		error = git_config_add_file_ondisk(cfg, buf.ptr,
 			GIT_CONFIG_LEVEL_SYSTEM, 0);
 
@@ -1152,7 +1171,7 @@ int git_config_parse_int64(int64_t *out, const char *value)
 	}
 
 fail_parse:
-	giterr_set(GITERR_CONFIG, "Failed to parse '%s' as an integer", value);
+	giterr_set(GITERR_CONFIG, "Failed to parse '%s' as an integer", value ? value : "(null)");
 	return -1;
 }
 
@@ -1172,8 +1191,38 @@ int git_config_parse_int32(int32_t *out, const char *value)
 	return 0;
 
 fail_parse:
-	giterr_set(GITERR_CONFIG, "Failed to parse '%s' as a 32-bit integer", value);
+	giterr_set(GITERR_CONFIG, "Failed to parse '%s' as a 32-bit integer", value ? value : "(null)");
 	return -1;
+}
+
+int git_config_parse_path(git_buf *out, const char *value)
+{
+	int error = 0;
+	const git_buf *home;
+
+	assert(out && value);
+
+	git_buf_sanitize(out);
+
+	if (value[0] == '~') {
+		if (value[1] != '\0' && value[1] != '/') {
+			giterr_set(GITERR_CONFIG, "retrieving a homedir by name is not supported");
+			return -1;
+		}
+
+		if ((error = git_sysdir_get(&home, GIT_SYSDIR_GLOBAL)) < 0)
+			return error;
+
+		git_buf_sets(out, home->ptr);
+		git_buf_puts(out, value + 1);
+
+		if (git_buf_oom(out))
+			return -1;
+
+		return 0;
+	}
+
+	return git_buf_sets(out, value);
 }
 
 /* Take something the user gave us and make it nice for our hash function */
@@ -1282,4 +1331,11 @@ cleanup:
 	git_buf_free(&replace);
 
 	return error;
+}
+
+int git_config_init_backend(git_config_backend *backend, unsigned int version)
+{
+	GIT_INIT_STRUCTURE_FROM_TEMPLATE(
+		backend, version, git_config_backend, GIT_CONFIG_BACKEND_INIT);
+	return 0;
 }

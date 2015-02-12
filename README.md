@@ -1,11 +1,13 @@
 libgit2 - the Git linkable library
 ==================================
 
-[![Build Status](https://secure.travis-ci.org/libgit2/libgit2.png?branch=development)](http://travis-ci.org/libgit2/libgit2)
+[![Travis Build Status](https://secure.travis-ci.org/libgit2/libgit2.svg?branch=master)](http://travis-ci.org/libgit2/libgit2)
+[![AppVeyor Build Status](https://ci.appveyor.com/api/projects/status/xvof5b4t5480a2q3/branch/master?svg=true)](https://ci.appveyor.com/project/libgit2/libgit2/branch/master)
+[![Coverity Scan Build Status](https://scan.coverity.com/projects/639/badge.svg)](https://scan.coverity.com/projects/639)
 
-`libgit2` is a portable, pure C implementation of the Git core methods provided as a
-re-entrant linkable library with a solid API, allowing you to write native
-speed custom Git applications in any language with bindings.
+`libgit2` is a portable, pure C implementation of the Git core methods
+provided as a re-entrant linkable library with a solid API, allowing you to
+write native speed custom Git applications in any language with bindings.
 
 `libgit2` is licensed under a **very permissive license** (GPLv2 with a special
 Linking Exception).  This basically means that you can link it (unmodified)
@@ -19,18 +21,19 @@ Additionally, the example code has been released to the public domain (see the
 * API documentation: <http://libgit2.github.com/libgit2>
 * IRC: [#libgit2](irc://irc.freenode.net/libgit2) on irc.freenode.net.
 * Mailing list: The libgit2 mailing list was
-    traditionally hosted in Librelist but has been deprecated. We encourage you to 
+    traditionally hosted in Librelist but has been deprecated. We encourage you to
     [use StackOverflow](http://stackoverflow.com/questions/tagged/libgit2) instead for any questions regarding
-    the library, or [open an issue](https://github.com/libgit2/libgit2/issues) 
-    on GitHub for bug reports.  The mailing list archives are still available at 
+    the library, or [open an issue](https://github.com/libgit2/libgit2/issues)
+    on GitHub for bug reports.  The mailing list archives are still available at
     <http://librelist.com/browser/libgit2/>.
 
 
 What It Can Do
 ==============
 
-`libgit2` is already very usable and is being used in production for many applications including the GitHub.com site, in Plastic SCM 
-and also powering Microsoft's Visual Studio tools for Git.  The library provides:
+`libgit2` is already very usable and is being used in production for many
+applications including the GitHub.com site, in Plastic SCM and also powering
+Microsoft's Visual Studio tools for Git.  The library provides:
 
 * SHA conversions, formatting and shortening
 * abstracted ODB backend system
@@ -53,8 +56,26 @@ dependencies, it can make use of a few libraries to add to it:
 
 - pthreads (non-Windows) to enable threadsafe access as well as multi-threaded pack generation
 - OpenSSL (non-Windows) to talk over HTTPS and provide the SHA-1 functions
-- LibSSH2 to enable the ssh transport
+- LibSSH2 to enable the SSH transport
 - iconv (OSX) to handle the HFS+ path encoding peculiarities
+
+Initialization
+===============
+
+The library needs to keep track of some global state. Call
+
+    git_libgit2_init();
+
+before calling any other libgit2 functions. You can call this function many times. A matching number of calls to
+
+    git_libgit2_shutdown();
+
+will free the resources.
+
+Threading
+=========
+
+See [THREADING](THREADING.md) for information
 
 Building libgit2 - Using CMake
 ==============================
@@ -64,7 +85,7 @@ Under Unix-like systems, like Linux, \*BSD and Mac OS X, libgit2 expects `pthrea
 they should be installed by default on all systems. Under Windows, libgit2 uses the native Windows API
 for threading.
 
-The `libgit2` library is built using `CMake 2.6+` (<http://www.cmake.org>) on all platforms.
+The `libgit2` library is built using [CMake](<http://www.cmake.org>) (version 2.6 or newer) on all platforms.
 
 On most systems you can build the library using the following commands
 
@@ -88,7 +109,7 @@ The following CMake variables are declared:
 - `INCLUDE_INSTALL_DIR`: Where to install headers to.
 - `BUILD_SHARED_LIBS`: Build libgit2 as a Shared Library (defaults to ON)
 - `BUILD_CLAR`: Build [Clar](https://github.com/vmg/clar)-based test suite (defaults to ON)
-- `THREADSAFE`: Build libgit2 with threading support (defaults to OFF)
+- `THREADSAFE`: Build libgit2 with threading support (defaults to ON)
 - `STDCALL`: Build libgit2 as `stdcall`. Turn off for `cdecl` (Windows; defaults to ON)
 
 Compiler and linker options
@@ -117,8 +138,7 @@ You need to run the CMake commands from the Visual Studio command
 prompt, not the regular or Windows SDK one. Select the right generator
 for your version with the `-G "Visual Studio X" option.
 
-See [the wiki]
-(https://github.com/libgit2/libgit2/wiki/Building-libgit2-on-Windows)
+See [the website](https://libgit2.github.com/docs/guides/build-and-link)
 for more detailed instructions.
 
 Android
@@ -131,11 +151,11 @@ with full path to the toolchain):
 
 	SET(CMAKE_SYSTEM_NAME Linux)
 	SET(CMAKE_SYSTEM_VERSION Android)
-	
+
 	SET(CMAKE_C_COMPILER   {PATH}/bin/arm-linux-androideabi-gcc)
 	SET(CMAKE_CXX_COMPILER {PATH}/bin/arm-linux-androideabi-g++)
 	SET(CMAKE_FIND_ROOT_PATH {PATH}/sysroot/)
-	
+
 	SET(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
 	SET(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
 	SET(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
@@ -164,6 +184,10 @@ Here are the bindings to libgit2 that are currently available:
     * libgit2-glib <https://live.gnome.org/Libgit2-glib>
 * Haskell
     * hgit2 <https://github.com/fpco/gitlib>
+* Java
+    * Jagged <https://github.com/ethomson/jagged>
+* Julia
+    * LibGit2.jl <https://github.com/jakebolewski/LibGit2.jl>
 * Lua
     * luagit2 <https://github.com/libgit2/luagit2>
 * .NET
@@ -178,13 +202,21 @@ Here are the bindings to libgit2 that are currently available:
 * Parrot Virtual Machine
     * parrot-libgit2 <https://github.com/letolabs/parrot-libgit2>
 * Perl
-    * Git-Raw <https://github.com/ghedo/p5-Git-Raw>
+    * Git-Raw <https://github.com/jacquesg/p5-Git-Raw>
 * PHP
     * php-git <https://github.com/libgit2/php-git>
+* PowerShell
+    * GitPowerShell <https://github.com/ethomson/gitpowershell>
 * Python
     * pygit2 <https://github.com/libgit2/pygit2>
+* R
+    * git2r <https://github.com/ropensci/git2r>
 * Ruby
     * Rugged <https://github.com/libgit2/rugged>
+* Rust
+    * git2-rs <https://github.com/alexcrichton/git2-rs>
+* Swift
+    * Gift <https://github.com/modocache/Gift>
 * Vala
     * libgit2.vapi <https://github.com/apmasell/vapis/blob/master/libgit2.vapi>
 
@@ -194,14 +226,16 @@ we can add it to the list.
 How Can I Contribute?
 ==================================
 
-Check the [contribution guidelines](CONTRIBUTING.md).
-
+Check the [contribution guidelines](CONTRIBUTING.md) to understand our
+workflow, the libgit2 [coding conventions](CONVENTIONS.md), and out list of
+[good starting projects](PROJECTS.md).
 
 License
 ==================================
-`libgit2` is under GPL2 **with linking exemption**. This means you
-can link to and use the library from any program, proprietary or open source; paid
-or gratis.  However, you cannot modify libgit2 and distribute it without
+
+`libgit2` is under GPL2 **with linking exception**. This means you can link to
+and use the library from any program, proprietary or open source; paid or
+gratis.  However, you cannot modify libgit2 and distribute it without
 supplying the source.
 
-See the COPYING file for the full license text.
+See the [COPYING file](COPYING) for the full license text.

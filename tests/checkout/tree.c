@@ -7,14 +7,14 @@
 #include "fileops.h"
 
 static git_repository *g_repo;
-static git_checkout_opts g_opts;
+static git_checkout_options g_opts;
 static git_object *g_object;
 
 void test_checkout_tree__initialize(void)
 {
 	g_repo = cl_git_sandbox_init("testrepo");
 
-	GIT_INIT_STRUCTURE(&g_opts, GIT_CHECKOUT_OPTS_VERSION);
+	GIT_INIT_STRUCTURE(&g_opts, GIT_CHECKOUT_OPTIONS_VERSION);
 	g_opts.checkout_strategy = GIT_CHECKOUT_SAFE_CREATE;
 }
 
@@ -63,7 +63,7 @@ void test_checkout_tree__can_checkout_and_remove_directory(void)
 	cl_git_pass(git_revparse_single(&g_object, g_repo, "subtrees"));
 	cl_git_pass(git_checkout_tree(g_repo, g_object, &g_opts));
 
-	cl_git_pass(git_repository_set_head(g_repo, "refs/heads/subtrees"));
+	cl_git_pass(git_repository_set_head(g_repo, "refs/heads/subtrees", NULL, NULL));
 
 	cl_assert_equal_i(true, git_path_isdir("./testrepo/ab/"));
 	cl_assert_equal_i(true, git_path_isfile("./testrepo/ab/de/2.txt"));
@@ -78,7 +78,7 @@ void test_checkout_tree__can_checkout_and_remove_directory(void)
 	cl_git_pass(git_revparse_single(&g_object, g_repo, "master"));
 	cl_git_pass(git_checkout_tree(g_repo, g_object, &g_opts));
 
-	cl_git_pass(git_repository_set_head(g_repo, "refs/heads/master"));
+	cl_git_pass(git_repository_set_head(g_repo, "refs/heads/master", NULL, NULL));
 
 	/* This directory should no longer exist */
 	cl_assert_equal_i(false, git_path_isdir("./testrepo/ab/"));
@@ -128,7 +128,7 @@ void test_checkout_tree__doesnt_write_unrequested_files_to_worktree(void)
 	git_oid chomped_oid;
 	git_commit* p_master_commit;
 	git_commit* p_chomped_commit;
-	git_checkout_opts opts = GIT_CHECKOUT_OPTS_INIT;
+	git_checkout_options opts = GIT_CHECKOUT_OPTIONS_INIT;
 
 	git_oid_fromstr(&master_oid, "a65fedf39aefe402d3bb6e24df4d4f5fe4547750");
 	git_oid_fromstr(&chomped_oid, "e90810b8df3e80c413d903f631643c716887138d");
@@ -148,7 +148,7 @@ void test_checkout_tree__doesnt_write_unrequested_files_to_worktree(void)
 
 void test_checkout_tree__can_switch_branches(void)
 {
-	git_checkout_opts opts = GIT_CHECKOUT_OPTS_INIT;
+	git_checkout_options opts = GIT_CHECKOUT_OPTIONS_INIT;
 	git_oid oid;
 	git_object *obj = NULL;
 
@@ -163,7 +163,7 @@ void test_checkout_tree__can_switch_branches(void)
 	cl_git_pass(git_object_lookup(&obj, g_repo, &oid, GIT_OBJ_ANY));
 
 	cl_git_pass(git_checkout_tree(g_repo, obj, &opts));
-	cl_git_pass(git_repository_set_head(g_repo, "refs/heads/dir"));
+	cl_git_pass(git_repository_set_head(g_repo, "refs/heads/dir", NULL, NULL));
 
 	cl_assert(git_path_isfile("testrepo/README"));
 	cl_assert(git_path_isfile("testrepo/branch_file.txt"));
@@ -183,7 +183,7 @@ void test_checkout_tree__can_switch_branches(void)
 	cl_git_pass(git_object_lookup(&obj, g_repo, &oid, GIT_OBJ_ANY));
 
 	cl_git_pass(git_checkout_tree(g_repo, obj, &opts));
-	cl_git_pass(git_repository_set_head(g_repo, "refs/heads/subtrees"));
+	cl_git_pass(git_repository_set_head(g_repo, "refs/heads/subtrees", NULL, NULL));
 
 	cl_assert(git_path_isfile("testrepo/README"));
 	cl_assert(git_path_isfile("testrepo/branch_file.txt"));
@@ -202,7 +202,7 @@ void test_checkout_tree__can_switch_branches(void)
 
 void test_checkout_tree__can_remove_untracked(void)
 {
-	git_checkout_opts opts = GIT_CHECKOUT_OPTS_INIT;
+	git_checkout_options opts = GIT_CHECKOUT_OPTIONS_INIT;
 
 	opts.checkout_strategy = GIT_CHECKOUT_SAFE | GIT_CHECKOUT_REMOVE_UNTRACKED;
 
@@ -216,7 +216,7 @@ void test_checkout_tree__can_remove_untracked(void)
 
 void test_checkout_tree__can_remove_ignored(void)
 {
-	git_checkout_opts opts = GIT_CHECKOUT_OPTS_INIT;
+	git_checkout_options opts = GIT_CHECKOUT_OPTIONS_INIT;
 	int ignored = 0;
 
 	opts.checkout_strategy = GIT_CHECKOUT_SAFE | GIT_CHECKOUT_REMOVE_IGNORED;
@@ -239,7 +239,7 @@ static int checkout_tree_with_blob_ignored_in_workdir(int strategy, bool isdir)
 {
 	git_oid oid;
 	git_object *obj = NULL;
-	git_checkout_opts opts = GIT_CHECKOUT_OPTS_INIT;
+	git_checkout_options opts = GIT_CHECKOUT_OPTIONS_INIT;
 	int ignored = 0, error;
 
 	assert_on_branch(g_repo, "master");
@@ -253,7 +253,7 @@ static int checkout_tree_with_blob_ignored_in_workdir(int strategy, bool isdir)
 	cl_git_pass(git_object_lookup(&obj, g_repo, &oid, GIT_OBJ_ANY));
 
 	cl_git_pass(git_checkout_tree(g_repo, obj, &opts));
-	cl_git_pass(git_repository_set_head(g_repo, "refs/heads/dir"));
+	cl_git_pass(git_repository_set_head(g_repo, "refs/heads/dir", NULL, NULL));
 
 	cl_assert(git_path_isfile("testrepo/README"));
 	cl_assert(git_path_isfile("testrepo/branch_file.txt"));
@@ -313,7 +313,7 @@ void test_checkout_tree__can_overwrite_ignored_by_default(void)
 {
 	cl_git_pass(checkout_tree_with_blob_ignored_in_workdir(GIT_CHECKOUT_SAFE, false));
 
-	cl_git_pass(git_repository_set_head(g_repo, "refs/heads/subtrees"));
+	cl_git_pass(git_repository_set_head(g_repo, "refs/heads/subtrees", NULL, NULL));
 
 	cl_assert(git_path_isfile("testrepo/ab/4.txt"));
 
@@ -334,7 +334,7 @@ void test_checkout_tree__can_overwrite_ignored_folder_by_default(void)
 {
 	cl_git_pass(checkout_tree_with_blob_ignored_in_workdir(GIT_CHECKOUT_SAFE, true));
 
-	cl_git_pass(git_repository_set_head(g_repo, "refs/heads/subtrees"));
+	cl_git_pass(git_repository_set_head(g_repo, "refs/heads/subtrees", NULL, NULL));
 
 	cl_assert(git_path_isfile("testrepo/ab/4.txt"));
 
@@ -344,7 +344,7 @@ void test_checkout_tree__can_overwrite_ignored_folder_by_default(void)
 
 void test_checkout_tree__can_update_only(void)
 {
-	git_checkout_opts opts = GIT_CHECKOUT_OPTS_INIT;
+	git_checkout_options opts = GIT_CHECKOUT_OPTIONS_INIT;
 	git_oid oid;
 	git_object *obj = NULL;
 
@@ -367,7 +367,7 @@ void test_checkout_tree__can_update_only(void)
 	cl_git_pass(git_object_lookup(&obj, g_repo, &oid, GIT_OBJ_ANY));
 
 	cl_git_pass(git_checkout_tree(g_repo, obj, &opts));
-	cl_git_pass(git_repository_set_head(g_repo, "refs/heads/dir"));
+	cl_git_pass(git_repository_set_head(g_repo, "refs/heads/dir", NULL, NULL));
 
 	assert_on_branch(g_repo, "dir");
 
@@ -396,7 +396,7 @@ void test_checkout_tree__can_checkout_with_pattern(void)
 
 	cl_git_pass(git_checkout_tree(g_repo, g_object, &g_opts));
 	cl_git_pass(
-		git_repository_set_head_detached(g_repo, git_object_id(g_object)));
+		git_repository_set_head_detached(g_repo, git_object_id(g_object), NULL, NULL));
 
 	git_object_free(g_object);
 	g_object = NULL;
@@ -435,7 +435,7 @@ void test_checkout_tree__can_disable_pattern_match(void)
 
 	cl_git_pass(git_checkout_tree(g_repo, g_object, &g_opts));
 	cl_git_pass(
-		git_repository_set_head_detached(g_repo, git_object_id(g_object)));
+		git_repository_set_head_detached(g_repo, git_object_id(g_object), NULL, NULL));
 
 	git_object_free(g_object);
 	g_object = NULL;
@@ -480,11 +480,11 @@ void assert_conflict(
 	/* Create a branch pointing at the parent */
 	cl_git_pass(git_revparse_single(&g_object, g_repo, parent_sha));
 	cl_git_pass(git_branch_create(&branch, g_repo,
-		"potential_conflict", (git_commit *)g_object, 0));
+		"potential_conflict", (git_commit *)g_object, 0, NULL, NULL));
 
 	/* Make HEAD point to this branch */
 	cl_git_pass(git_reference_symbolic_create(
-		&head, g_repo, "HEAD", git_reference_name(branch), 1));
+		&head, g_repo, "HEAD", git_reference_name(branch), 1, NULL, NULL));
 	git_reference_free(head);
 	git_reference_free(branch);
 
@@ -554,7 +554,7 @@ void test_checkout_tree__checking_out_a_conflicting_content_change_returns_EMERG
 
 void test_checkout_tree__donot_update_deleted_file_by_default(void)
 {
-	git_checkout_opts opts = GIT_CHECKOUT_OPTS_INIT;
+	git_checkout_options opts = GIT_CHECKOUT_OPTIONS_INIT;
 	git_oid old_id, new_id;
 	git_commit *old_commit = NULL, *new_commit = NULL;
 	git_index *index = NULL;
@@ -571,7 +571,7 @@ void test_checkout_tree__donot_update_deleted_file_by_default(void)
 
 	cl_git_pass(git_oid_fromstr(&old_id, "be3563ae3f795b2b4353bcce3a527ad0a4f7f644"));
 	cl_git_pass(git_commit_lookup(&old_commit, g_repo, &old_id));
-	cl_git_pass(git_reset(g_repo, (git_object *)old_commit, GIT_RESET_HARD));
+	cl_git_pass(git_reset(g_repo, (git_object *)old_commit, GIT_RESET_HARD, NULL, NULL, NULL));
 
 	cl_git_pass(p_unlink("testrepo/branch_file.txt"));
 	cl_git_pass(git_index_remove_bypath(index ,"branch_file.txt"));
@@ -622,7 +622,7 @@ static int checkout_cancel_cb(
 void test_checkout_tree__can_cancel_checkout_from_notify(void)
 {
 	struct checkout_cancel_at ca;
-	git_checkout_opts opts = GIT_CHECKOUT_OPTS_INIT;
+	git_checkout_options opts = GIT_CHECKOUT_OPTIONS_INIT;
 	git_oid oid;
 	git_object *obj = NULL;
 
@@ -645,14 +645,7 @@ void test_checkout_tree__can_cancel_checkout_from_notify(void)
 	cl_git_fail_with(git_checkout_tree(g_repo, obj, &opts), -5555);
 
 	cl_assert(!git_path_exists("testrepo/new.txt"));
-
-	/* on case-insensitive FS = a/b.txt, branch_file.txt, new.txt */
-	/* on case-sensitive FS   = README, then above */
-
-	if (git_path_exists("testrepo/.git/CoNfIg")) /* case insensitive */
-		cl_assert_equal_i(3, ca.count);
-	else
-		cl_assert_equal_i(4, ca.count);
+	cl_assert_equal_i(4, ca.count);
 
 	/* and again with a different stopping point and return code */
 	ca.filename = "README";
@@ -662,11 +655,7 @@ void test_checkout_tree__can_cancel_checkout_from_notify(void)
 	cl_git_fail_with(git_checkout_tree(g_repo, obj, &opts), 123);
 
 	cl_assert(!git_path_exists("testrepo/new.txt"));
-
-	if (git_path_exists("testrepo/.git/CoNfIg")) /* case insensitive */
-		cl_assert_equal_i(4, ca.count);
-	else
-		cl_assert_equal_i(1, ca.count);
+	cl_assert_equal_i(1, ca.count);
 
 	git_object_free(obj);
 }
@@ -674,7 +663,7 @@ void test_checkout_tree__can_cancel_checkout_from_notify(void)
 void test_checkout_tree__can_checkout_with_last_workdir_item_missing(void)
 {
 	git_index *index = NULL;
-	git_checkout_opts opts = GIT_CHECKOUT_OPTS_INIT;
+	git_checkout_options opts = GIT_CHECKOUT_OPTIONS_INIT;
 	git_oid tree_id, commit_id;
 	git_tree *tree = NULL;
 	git_commit *commit = NULL;
@@ -687,7 +676,7 @@ void test_checkout_tree__can_checkout_with_last_workdir_item_missing(void)
 	cl_git_pass(git_commit_lookup(&commit, g_repo, &commit_id));
 
 	cl_git_pass(git_checkout_tree(g_repo, (git_object *)commit, &opts));
-	cl_git_pass(git_repository_set_head(g_repo, "refs/heads/master"));
+	cl_git_pass(git_repository_set_head(g_repo, "refs/heads/master", NULL, NULL));
 
 	cl_git_pass(p_mkdir("./testrepo/this-is-dir", 0777));
 	cl_git_mkfile("./testrepo/this-is-dir/contained_file", "content\n");
@@ -710,7 +699,7 @@ void test_checkout_tree__can_checkout_with_last_workdir_item_missing(void)
 
 void test_checkout_tree__issue_1397(void)
 {
-	git_checkout_opts opts = GIT_CHECKOUT_OPTS_INIT;
+	git_checkout_options opts = GIT_CHECKOUT_OPTIONS_INIT;
 	const char *partial_oid = "8a7ef04";
 	git_object *tree = NULL;
 
@@ -733,7 +722,7 @@ void test_checkout_tree__issue_1397(void)
 
 void test_checkout_tree__can_write_to_empty_dirs(void)
 {
-	git_checkout_opts opts = GIT_CHECKOUT_OPTS_INIT;
+	git_checkout_options opts = GIT_CHECKOUT_OPTIONS_INIT;
 	git_oid oid;
 	git_object *obj = NULL;
 
@@ -759,7 +748,7 @@ void test_checkout_tree__can_write_to_empty_dirs(void)
 void test_checkout_tree__fails_when_dir_in_use(void)
 {
 #ifdef GIT_WIN32
-	git_checkout_opts opts = GIT_CHECKOUT_OPTS_INIT;
+	git_checkout_options opts = GIT_CHECKOUT_OPTIONS_INIT;
 	git_oid oid;
 	git_object *obj = NULL;
 
@@ -792,7 +781,7 @@ void test_checkout_tree__fails_when_dir_in_use(void)
 void test_checkout_tree__can_continue_when_dir_in_use(void)
 {
 #ifdef GIT_WIN32
-	git_checkout_opts opts = GIT_CHECKOUT_OPTS_INIT;
+	git_checkout_options opts = GIT_CHECKOUT_OPTIONS_INIT;
 	git_oid oid;
 	git_object *obj = NULL;
 
@@ -825,7 +814,7 @@ void test_checkout_tree__can_continue_when_dir_in_use(void)
 
 void test_checkout_tree__target_directory_from_bare(void)
 {
-	git_checkout_opts opts = GIT_CHECKOUT_OPTS_INIT;
+	git_checkout_options opts = GIT_CHECKOUT_OPTIONS_INIT;
 	git_oid oid;
 	checkout_counts cts;
 	memset(&cts, 0, sizeof(cts));
@@ -882,7 +871,7 @@ void test_checkout_tree__extremely_long_file_name(void)
 	cl_assert(!git_path_exists(path));
 }
 
-static void create_conflict(void)
+static void create_conflict(const char *path)
 {
 	git_index *index;
 	git_index_entry entry;
@@ -892,16 +881,16 @@ static void create_conflict(void)
 	memset(&entry, 0x0, sizeof(git_index_entry));
 	entry.mode = 0100644;
 	entry.flags = 1 << GIT_IDXENTRY_STAGESHIFT;
-	git_oid_fromstr(&entry.oid, "d427e0b2e138501a3d15cc376077a3631e15bd46");
-	entry.path = "conflicts.txt";
+	git_oid_fromstr(&entry.id, "d427e0b2e138501a3d15cc376077a3631e15bd46");
+	entry.path = path;
 	cl_git_pass(git_index_add(index, &entry));
 
 	entry.flags = 2 << GIT_IDXENTRY_STAGESHIFT;
-	git_oid_fromstr(&entry.oid, "ee3fa1b8c00aff7fe02065fdb50864bb0d932ccf");
+	git_oid_fromstr(&entry.id, "ee3fa1b8c00aff7fe02065fdb50864bb0d932ccf");
 	cl_git_pass(git_index_add(index, &entry));
 
 	entry.flags = 3 << GIT_IDXENTRY_STAGESHIFT;
-	git_oid_fromstr(&entry.oid, "2bd0a343aeef7a2cf0d158478966a6e587ff3863");
+	git_oid_fromstr(&entry.id, "2bd0a343aeef7a2cf0d158478966a6e587ff3863");
 	cl_git_pass(git_index_add(index, &entry));
 
 	git_index_write(index);
@@ -910,7 +899,7 @@ static void create_conflict(void)
 
 void test_checkout_tree__fails_when_conflicts_exist_in_index(void)
 {
-	git_checkout_opts opts = GIT_CHECKOUT_OPTS_INIT;
+	git_checkout_options opts = GIT_CHECKOUT_OPTIONS_INIT;
 	git_oid oid;
 	git_object *obj = NULL;
 
@@ -919,9 +908,225 @@ void test_checkout_tree__fails_when_conflicts_exist_in_index(void)
 	cl_git_pass(git_reference_name_to_id(&oid, g_repo, "HEAD"));
 	cl_git_pass(git_object_lookup(&obj, g_repo, &oid, GIT_OBJ_ANY));
 
-	create_conflict();
+	create_conflict("conflicts.txt");
 
 	cl_git_fail(git_checkout_tree(g_repo, obj, &opts));
+
+	git_object_free(obj);
+}
+
+void test_checkout_tree__filemode_preserved_in_index(void)
+{
+	git_oid executable_oid;
+	git_commit *commit;
+	git_checkout_options opts = GIT_CHECKOUT_OPTIONS_INIT;
+	git_index *index;
+	const git_index_entry *entry;
+
+	cl_git_pass(git_repository_index(&index, g_repo));
+
+	cl_git_pass(git_oid_fromstr(&executable_oid, "afe4393b2b2a965f06acf2ca9658eaa01e0cd6b6"));
+	cl_git_pass(git_commit_lookup(&commit, g_repo, &executable_oid));
+
+	opts.checkout_strategy = GIT_CHECKOUT_FORCE;
+
+	cl_git_pass(git_checkout_tree(g_repo, (const git_object *)commit, &opts));
+	cl_assert(entry = git_index_get_bypath(index, "executable.txt", 0));
+	cl_assert_equal_i(0100755, entry->mode);
+
+	git_commit_free(commit);
+	git_index_free(index);
+}
+
+void test_checkout_tree__removes_conflicts(void)
+{
+	git_oid commit_id;
+	git_commit *commit;
+	git_checkout_options opts = GIT_CHECKOUT_OPTIONS_INIT;
+	git_index *index;
+	
+	cl_git_pass(git_oid_fromstr(&commit_id, "afe4393b2b2a965f06acf2ca9658eaa01e0cd6b6"));
+	cl_git_pass(git_commit_lookup(&commit, g_repo, &commit_id));
+
+	opts.checkout_strategy = GIT_CHECKOUT_FORCE;
+
+	cl_git_pass(git_checkout_tree(g_repo, (const git_object *)commit, &opts));
+
+	cl_git_pass(git_repository_index(&index, g_repo));
+	cl_git_pass(git_index_remove(index, "executable.txt", 0));
+
+	create_conflict("executable.txt");
+	cl_git_mkfile("testrepo/executable.txt", "This is the conflict file.\n");
+
+	create_conflict("other.txt");
+	cl_git_mkfile("testrepo/other.txt", "This is another conflict file.\n");
+
+	git_index_write(index);
+
+	cl_git_pass(git_checkout_tree(g_repo, (const git_object *)commit, &opts));
+
+	cl_assert_equal_p(NULL, git_index_get_bypath(index, "executable.txt", 1));
+	cl_assert_equal_p(NULL, git_index_get_bypath(index, "executable.txt", 2));
+	cl_assert_equal_p(NULL, git_index_get_bypath(index, "executable.txt", 3));
+
+	cl_assert_equal_p(NULL, git_index_get_bypath(index, "other.txt", 1));
+	cl_assert_equal_p(NULL, git_index_get_bypath(index, "other.txt", 2));
+	cl_assert_equal_p(NULL, git_index_get_bypath(index, "other.txt", 3));
+
+	cl_assert(!git_path_exists("testrepo/other.txt"));
+
+	git_commit_free(commit);
+	git_index_free(index);
+}
+
+
+void test_checkout_tree__removes_conflicts_only_by_pathscope(void)
+{
+	git_oid commit_id;
+	git_commit *commit;
+	git_checkout_options opts = GIT_CHECKOUT_OPTIONS_INIT;
+	git_index *index;
+	const char *path = "executable.txt";
+	
+	cl_git_pass(git_oid_fromstr(&commit_id, "afe4393b2b2a965f06acf2ca9658eaa01e0cd6b6"));
+	cl_git_pass(git_commit_lookup(&commit, g_repo, &commit_id));
+
+	opts.checkout_strategy = GIT_CHECKOUT_FORCE;
+	opts.paths.count = 1;
+	opts.paths.strings = (char **)&path;
+
+	cl_git_pass(git_checkout_tree(g_repo, (const git_object *)commit, &opts));
+
+	cl_git_pass(git_repository_index(&index, g_repo));
+	cl_git_pass(git_index_remove(index, "executable.txt", 0));
+
+	create_conflict("executable.txt");
+	cl_git_mkfile("testrepo/executable.txt", "This is the conflict file.\n");
+
+	create_conflict("other.txt");
+	cl_git_mkfile("testrepo/other.txt", "This is another conflict file.\n");
+
+	git_index_write(index);
+
+	cl_git_pass(git_checkout_tree(g_repo, (const git_object *)commit, &opts));
+
+	cl_assert_equal_p(NULL, git_index_get_bypath(index, "executable.txt", 1));
+	cl_assert_equal_p(NULL, git_index_get_bypath(index, "executable.txt", 2));
+	cl_assert_equal_p(NULL, git_index_get_bypath(index, "executable.txt", 3));
+
+	cl_assert(git_index_get_bypath(index, "other.txt", 1) != NULL);
+	cl_assert(git_index_get_bypath(index, "other.txt", 2) != NULL);
+	cl_assert(git_index_get_bypath(index, "other.txt", 3) != NULL);
+
+	cl_assert(git_path_exists("testrepo/other.txt"));
+
+	git_commit_free(commit);
+	git_index_free(index);
+}
+
+void test_checkout_tree__case_changing_rename(void)
+{
+	git_index *index;
+	git_checkout_options opts = GIT_CHECKOUT_OPTIONS_INIT;
+	git_oid master_id, dir_commit_id, tree_id, commit_id;
+	git_commit *master_commit, *dir_commit;
+	git_tree *tree;
+	git_signature *signature;
+	const git_index_entry *index_entry;
+	bool case_sensitive;
+
+	assert_on_branch(g_repo, "master");
+
+	cl_git_pass(git_repository_index(&index, g_repo));
+
+	/* Switch branches and perform a case-changing rename */
+
+	opts.checkout_strategy = GIT_CHECKOUT_FORCE;
+
+	cl_git_pass(git_reference_name_to_id(&dir_commit_id, g_repo, "refs/heads/dir"));
+	cl_git_pass(git_commit_lookup(&dir_commit, g_repo, &dir_commit_id));
+
+	cl_git_pass(git_checkout_tree(g_repo, (git_object *)dir_commit, &opts));
+	cl_git_pass(git_repository_set_head(g_repo, "refs/heads/dir", NULL, NULL));
+
+	cl_assert(git_path_isfile("testrepo/README"));
+	case_sensitive = !git_path_isfile("testrepo/readme");
+
+	cl_assert(index_entry = git_index_get_bypath(index, "README", 0));
+	cl_assert_equal_s("README", index_entry->path);
+
+	cl_git_pass(git_index_remove_bypath(index, "README"));
+	cl_git_pass(p_rename("testrepo/README", "testrepo/__readme__"));
+	cl_git_pass(p_rename("testrepo/__readme__", "testrepo/readme"));
+	cl_git_append2file("testrepo/readme", "An addendum...");
+	cl_git_pass(git_index_add_bypath(index, "readme"));
+
+	cl_git_pass(git_index_write(index));
+
+	cl_git_pass(git_index_write_tree(&tree_id, index));
+	cl_git_pass(git_tree_lookup(&tree, g_repo, &tree_id));
+
+	cl_git_pass(git_signature_new(&signature, "Renamer", "rename@contoso.com", time(NULL), 0));
+
+	cl_git_pass(git_commit_create(&commit_id, g_repo, "refs/heads/dir", signature, signature, NULL, "case-changing rename", tree, 1, (const git_commit **)&dir_commit));
+
+	cl_assert(git_path_isfile("testrepo/readme"));
+	if (case_sensitive)
+		cl_assert(!git_path_isfile("testrepo/README"));
+
+	cl_assert(index_entry = git_index_get_bypath(index, "readme", 0));
+	cl_assert_equal_s("readme", index_entry->path);
+
+	/* Switching back to master should rename readme -> README */
+	opts.checkout_strategy = GIT_CHECKOUT_SAFE;
+
+	cl_git_pass(git_reference_name_to_id(&master_id, g_repo, "refs/heads/master"));
+	cl_git_pass(git_commit_lookup(&master_commit, g_repo, &master_id));
+
+	cl_git_pass(git_checkout_tree(g_repo, (git_object *)master_commit, &opts));
+	cl_git_pass(git_repository_set_head(g_repo, "refs/heads/master", NULL, NULL));
+	
+	assert_on_branch(g_repo, "master");
+
+	cl_assert(git_path_isfile("testrepo/README"));
+	if (case_sensitive)
+		cl_assert(!git_path_isfile("testrepo/readme"));
+
+	cl_assert(index_entry = git_index_get_bypath(index, "README", 0));
+	cl_assert_equal_s("README", index_entry->path);
+
+	git_index_free(index);
+	git_signature_free(signature);
+	git_tree_free(tree);
+	git_commit_free(dir_commit);
+	git_commit_free(master_commit);
+}
+
+void perfdata_cb(const git_checkout_perfdata *in, void *payload)
+{
+	memcpy(payload, in, sizeof(git_checkout_perfdata));
+}
+
+void test_checkout_tree__can_collect_perfdata(void)
+{
+	git_checkout_options opts = GIT_CHECKOUT_OPTIONS_INIT;
+	git_oid oid;
+	git_object *obj = NULL;
+	git_checkout_perfdata perfdata = {0};
+
+	opts.perfdata_cb = perfdata_cb;
+	opts.perfdata_payload = &perfdata;
+
+	assert_on_branch(g_repo, "master");
+	opts.checkout_strategy = GIT_CHECKOUT_FORCE;
+
+	cl_git_pass(git_reference_name_to_id(&oid, g_repo, "refs/heads/dir"));
+	cl_git_pass(git_object_lookup(&obj, g_repo, &oid, GIT_OBJ_ANY));
+
+	cl_git_pass(git_checkout_tree(g_repo, obj, &opts));
+
+	cl_assert(perfdata.mkdir_calls > 0);
+	cl_assert(perfdata.stat_calls > 0);
 
 	git_object_free(obj);
 }

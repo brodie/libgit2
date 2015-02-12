@@ -8,6 +8,7 @@
 #define INCLUDE_util_h__
 
 #include "common.h"
+#include "strnlen.h"
 
 #define ARRAY_SIZE(x) (sizeof(x)/sizeof(x[0]))
 #define bitsizeof(x) (CHAR_BIT * sizeof(x))
@@ -18,6 +19,17 @@
 #ifndef max
 # define max(a,b) ((a) > (b) ? (a) : (b))
 #endif
+
+#define GIT_DATE_RFC2822_SZ  32
+
+/**
+ * Return the length of a constant string.
+ * We are aware that `strlen` performs the same task and is usually
+ * optimized away by the compiler, whilst being safer because it returns
+ * valid values when passed a pointer instead of a constant string; however
+ * this macro will transparently work with wide-char and single-char strings.
+ */
+#define CONST_STRLEN(x) ((sizeof(x)/sizeof(x[0])) - 1)
 
 /*
  * Custom memory allocation wrappers
@@ -50,8 +62,7 @@ GIT_INLINE(char *) git__strndup(const char *str, size_t n)
 	size_t length = 0;
 	char *ptr;
 
-	while (length < n && str[length])
-		++length;
+	length = p_strnlen(str, n);
 
 	ptr = (char*)git__malloc(length + 1);
 
@@ -95,6 +106,7 @@ GIT_INLINE(void) git__free(void *ptr)
 
 extern int git__prefixcmp(const char *str, const char *prefix);
 extern int git__prefixcmp_icase(const char *str, const char *prefix);
+extern int git__prefixncmp_icase(const char *str, size_t str_n, const char *prefix);
 extern int git__suffixcmp(const char *str, const char *suffix);
 
 GIT_INLINE(int) git__signum(int val)
@@ -120,6 +132,13 @@ GIT_INLINE(int) git__is_uint32(size_t p)
 {
 	uint32_t r = (uint32_t)p;
 	return p == (size_t)r;
+}
+
+/** @return true if p fits into the range of an unsigned long */
+GIT_INLINE(int) git__is_ulong(git_off_t p)
+{
+	unsigned long r = (unsigned long)p;
+	return p == (git_off_t)r;
 }
 
 /* 32-bit cross-platform rotl */
@@ -194,6 +213,7 @@ extern int git__bsearch_r(
 	size_t *position);
 
 extern int git__strcmp_cb(const void *a, const void *b);
+extern int git__strcasecmp_cb(const void *a, const void *b);
 
 extern int git__strcmp(const char *a, const char *b);
 extern int git__strcasecmp(const char *a, const char *b);
@@ -257,7 +277,7 @@ GIT_INLINE(int) git__fromhex(char h)
 GIT_INLINE(int) git__ishex(const char *str)
 {
 	unsigned i;
-	for (i=0; i<strlen(str); i++)
+	for (i=0; str[i] != '\0'; i++)
 		if (git__fromhex(str[i]) < 0)
 			return 0;
 	return 1;
@@ -297,12 +317,12 @@ GIT_INLINE(bool) git__isdigit(int c)
 
 GIT_INLINE(bool) git__isspace(int c)
 {
-	return (c == ' ' || c == '\t' || c == '\n' || c == '\f' || c == '\r' || c == '\v' || c == 0x85 /* Unicode CR+LF */);
+	return (c == ' ' || c == '\t' || c == '\n' || c == '\f' || c == '\r' || c == '\v');
 }
 
 GIT_INLINE(bool) git__isspace_nonlf(int c)
 {
-	return (c == ' ' || c == '\t' || c == '\f' || c == '\r' || c == '\v' || c == 0x85 /* Unicode CR+LF */);
+	return (c == ' ' || c == '\t' || c == '\f' || c == '\r' || c == '\v');
 }
 
 GIT_INLINE(bool) git__iswildcard(int c)
@@ -329,6 +349,16 @@ extern int git__parse_bool(int *out, const char *value);
 extern int git__date_parse(git_time_t *out, const char *date);
 
 /*
+ * Format a git_time as a RFC2822 string
+ *
+ * @param out buffer to store formatted date; a '\\0' terminator will automatically be added.
+ * @param len size of the buffer; should be atleast `GIT_DATE_RFC2822_SZ` in size;
+ * @param date the date to be formatted
+ * @return 0 if successful; -1 on error
+ */
+extern int git__date_rfc2822_fmt(char *out, size_t len, const git_time *date);
+
+/*
  * Unescapes a string in-place.
  *
  * Edge cases behavior:
@@ -336,6 +366,17 @@ extern int git__date_parse(git_time_t *out, const char *date);
  * - "chan\\" -> "chan\"
  */
 extern size_t git__unescape(char *str);
+
+/*
+ * Iterate through an UTF-8 string, yielding one
+ * codepoint at a time.
+ *
+ * @param str current position in the string
+ * @param str_len size left in the string; -1 if the string is NULL-terminated
+ * @param dst pointer where to store the current codepoint
+ * @return length in bytes of the read codepoint; -1 if the codepoint was invalid
+ */
+extern int git__utf8_iterate(const uint8_t *str, int str_len, int32_t *dst);
 
 /*
  * Safely zero-out memory, making sure that the compiler
@@ -390,7 +431,18 @@ GIT_INLINE(double) git__timer(void)
        scaling_factor = (double)info.numer / (double)info.denom;
    }
 
-   return (double)time * scaling_factor / 1.0E-9;
+   return (double)time * scaling_factor / 1.0E9;
+}
+
+#elif defined(AMIGA)
+
+#include <proto/timer.h>
+
+GIT_INLINE(double) git__timer(void)
+{
+	struct TimeVal tv;
+	ITimer->GetUpTime(&tv);
+	return (double)tv.Seconds + (double)tv.Microseconds / 1.0E6;
 }
 
 #else
@@ -402,13 +454,13 @@ GIT_INLINE(double) git__timer(void)
 	struct timespec tp;
 
 	if (clock_gettime(CLOCK_MONOTONIC, &tp) == 0) {
-		return (double) tp.tv_sec + (double) tp.tv_nsec / 1E-9;
+		return (double) tp.tv_sec + (double) tp.tv_nsec / 1.0E9;
 	} else {
 		/* Fall back to using gettimeofday */
 		struct timeval tv;
 		struct timezone tz;
 		gettimeofday(&tv, &tz);
-		return (double)tv.tv_sec + (double)tv.tv_usec / 1E-6;
+		return (double)tv.tv_sec + (double)tv.tv_usec / 1.0E6;
 	}
 }
 

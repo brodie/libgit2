@@ -82,7 +82,7 @@ int git_reflog_append(git_reflog *reflog, const git_oid *new_oid, const git_sign
 	entry = git__calloc(1, sizeof(git_reflog_entry));
 	GITERR_CHECK_ALLOC(entry);
 
-	if ((entry->committer = git_signature_dup(committer)) == NULL)
+	if ((git_signature_dup(&entry->committer, committer)) < 0)
 		goto cleanup;
 
 	if (msg != NULL) {
@@ -148,7 +148,7 @@ size_t git_reflog_entrycount(git_reflog *reflog)
 	return reflog->entries.length;
 }
 
-const git_reflog_entry * git_reflog_entry_byindex(git_reflog *reflog, size_t idx)
+const git_reflog_entry * git_reflog_entry_byindex(const git_reflog *reflog, size_t idx)
 {
 	assert(reflog);
 

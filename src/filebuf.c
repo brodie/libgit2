@@ -4,8 +4,6 @@
  * This file is part of libgit2, distributed under the GNU GPL v2 with
  * a Linking Exception. For full terms see the included COPYING file.
  */
-#include <stdarg.h>
-
 #include "common.h"
 #include "filebuf.h"
 #include "fileops.h"
@@ -335,8 +333,6 @@ int git_filebuf_commit(git_filebuf *file)
 	}
 
 	file->fd = -1;
-
-	p_unlink(file->path_original);
 
 	if (p_rename(file->path_lock, file->path_original) < 0) {
 		giterr_set(GITERR_OS, "Failed to rename lockfile to '%s'", file->path_original);

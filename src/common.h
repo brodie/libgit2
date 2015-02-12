@@ -10,6 +10,13 @@
 #include "git2/common.h"
 #include "cc-compat.h"
 
+/** Declare a function as always inlined. */
+#if defined(_MSC_VER)
+# define GIT_INLINE(type) static __inline type
+#else
+# define GIT_INLINE(type) static inline type
+#endif
+
 #include <assert.h>
 #include <errno.h>
 #include <limits.h>
@@ -37,8 +44,10 @@
 #else
 
 # include <unistd.h>
+# include <strings.h>
 # ifdef GIT_THREADS
 #	include <pthread.h>
+#	include <sched.h>
 # endif
 #define GIT_STDLIB_CALL
 
@@ -49,7 +58,6 @@
 #include "git2/types.h"
 #include "git2/errors.h"
 #include "thread-utils.h"
-#include "bswap.h"
 
 #include <regex.h>
 
@@ -59,7 +67,7 @@
 #define GITERR_CHECK_ALLOC(ptr) if (ptr == NULL) { return -1; }
 
 /**
- * Check a return value and propogate result if non-zero.
+ * Check a return value and propagate result if non-zero.
  */
 #define GITERR_CHECK_ERROR(code) \
 	do { int _err = (code); if (_err) return _err; } while (0)
@@ -160,6 +168,11 @@ GIT_INLINE(void) git__init_structure(void *structure, size_t len, unsigned int v
 	*((int*)structure) = version;
 }
 #define GIT_INIT_STRUCTURE(S,V) git__init_structure(S, sizeof(*S), V)
+
+#define GIT_INIT_STRUCTURE_FROM_TEMPLATE(PTR,VERSION,TYPE,TPL) do { \
+	TYPE _tmpl = TPL; \
+	GITERR_CHECK_VERSION(&(VERSION), _tmpl.version, #TYPE);	\
+	memcpy((PTR), &_tmpl, sizeof(_tmpl)); } while (0)
 
 /* NOTE: other giterr functions are in the public errors.h header file */
 

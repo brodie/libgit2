@@ -28,22 +28,23 @@ static int maybe_want(git_remote *remote, git_remote_head *head, git_odb *odb, g
 
 	if (remote->download_tags == GIT_REMOTE_DOWNLOAD_TAGS_ALL) {
 		/*
-		 * If tagopt is --tags, then we only use the default
-		 * tags refspec and ignore the remote's
+		 * If tagopt is --tags, always request tags
+		 * in addition to the remote's refspecs
 		 */
 		if (git_refspec_src_matches(tagspec, head->name))
 			match = 1;
-		else
-			return 0;
-	} else if (git_remote__matching_refspec(remote, head->name))
-			match = 1;
+	}
+
+	if (!match && git_remote__matching_refspec(remote, head->name))
+		match = 1;
 
 	if (!match)
 		return 0;
 
 	/* If we have the object, mark it so we don't ask for it */
-	if (git_odb_exists(odb, &head->oid))
+	if (git_odb_exists(odb, &head->oid)) {
 		head->local = 1;
+	}
 	else
 		remote->need_pack = 1;
 
@@ -104,6 +105,8 @@ cleanup:
 int git_fetch_negotiate(git_remote *remote)
 {
 	git_transport *t = remote->transport;
+
+    remote->need_pack = 0;
 
 	if (filter_wants(remote) < 0) {
 		giterr_set(GITERR_NET, "Failed to filter the reference list for wants");

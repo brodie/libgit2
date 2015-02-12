@@ -18,7 +18,7 @@ void cl_git_mkfile(const char *filename, const char *content)
 	int fd;
 
 	fd = p_creat(filename, 0666);
-	cl_assert(fd != 0);
+	cl_assert(fd != -1);
 
 	if (content) {
 		cl_must_pass(p_write(fd, content, strlen(content)));
@@ -53,55 +53,55 @@ void cl_git_rewritefile(const char *path, const char *content)
 	cl_git_write2file(path, content, 0, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 }
 
+void cl_git_rmfile(const char *filename)
+{
+	cl_must_pass(p_unlink(filename));
+}
+
 #ifdef GIT_WIN32
 
 #include "win32/utf-conv.h"
 
 char *cl_getenv(const char *name)
 {
-	git_win32_path name_utf16;
-	DWORD alloc_len;
-	wchar_t *value_utf16;
-	char *value_utf8;
+	wchar_t *wide_name, *wide_value;
+	char *utf8_value = NULL;
+	DWORD value_len;
 
-	git_win32_path_from_c(name_utf16, name);
-	alloc_len = GetEnvironmentVariableW(name_utf16, NULL, 0);
-	if (alloc_len <= 0)
-		return NULL;
+	cl_assert(git__utf8_to_16_alloc(&wide_name, name) >= 0);
 
-	cl_assert(value_utf16 = git__calloc(alloc_len, sizeof(wchar_t)));
+	value_len = GetEnvironmentVariableW(wide_name, NULL, 0);
 
-	GetEnvironmentVariableW(name_utf16, value_utf16, alloc_len);
+	if (value_len) {
+		cl_assert(wide_value = git__malloc(value_len * sizeof(wchar_t)));
+		cl_assert(GetEnvironmentVariableW(wide_name, wide_value, value_len));
+		cl_assert(git__utf16_to_8_alloc(&utf8_value, wide_value) >= 0);
+		git__free(wide_value);
+	}
 
-	alloc_len = alloc_len * 4 + 1; /* worst case UTF16->UTF8 growth */
-	cl_assert(value_utf8 = git__calloc(alloc_len, 1));
-
-	git__utf16_to_8(value_utf8, alloc_len, value_utf16);
-
-	git__free(value_utf16);
-
-	return value_utf8;
+	git__free(wide_name);
+	return utf8_value;
 }
 
 int cl_setenv(const char *name, const char *value)
 {
-	git_win32_path name_utf16;
-	git_win32_path value_utf16;
+	wchar_t *wide_name, *wide_value = NULL;
 
-	git_win32_path_from_c(name_utf16, name);
+	cl_assert(git__utf8_to_16_alloc(&wide_name, name) >= 0);
 
 	if (value) {
-		git_win32_path_from_c(value_utf16, value);
-		cl_assert(SetEnvironmentVariableW(name_utf16, value_utf16));
+		cl_assert(git__utf8_to_16_alloc(&wide_value, value) >= 0);
+		cl_assert(SetEnvironmentVariableW(wide_name, wide_value));
 	} else {
 		/* Windows XP returns 0 (failed) when passing NULL for lpValue when
-		 * lpName does not exist in the environment block. This behavior
-		 * seems to have changed in later versions. Don't check return value
-		 * of SetEnvironmentVariable when passing NULL for lpValue.
-		 */
-		SetEnvironmentVariableW(name_utf16, NULL);
+		* lpName does not exist in the environment block. This behavior
+		* seems to have changed in later versions. Don't check the return value
+		* of SetEnvironmentVariable when passing NULL for lpValue. */
+		SetEnvironmentVariableW(wide_name, NULL);
 	}
 
+	git__free(wide_name);
+	git__free(wide_value);
 	return 0;
 }
 
@@ -115,8 +115,8 @@ int cl_rename(const char *source, const char *dest)
 	git_win32_path dest_utf16;
 	unsigned retries = 1;
 
-	git_win32_path_from_c(source_utf16, source);
-	git_win32_path_from_c(dest_utf16, dest);
+	cl_assert(git_win32_path_from_utf8(source_utf16, source) >= 0);
+	cl_assert(git_win32_path_from_utf8(dest_utf16, dest) >= 0);
 
 	while (!MoveFileW(source_utf16, dest_utf16)) {
 		/* Only retry if the error is ERROR_ACCESS_DENIED;
@@ -415,9 +415,18 @@ int cl_repo_get_bool(git_repository *repo, const char *cfg)
 	int val = 0;
 	git_config *config;
 	cl_git_pass(git_repository_config(&config, repo));
-	cl_git_pass(git_config_get_bool(&val, config, cfg));;
+	if (git_config_get_bool(&val, config, cfg) < 0)
+		giterr_clear();
 	git_config_free(config);
 	return val;
+}
+
+void cl_repo_set_string(git_repository *repo, const char *cfg, const char *value)
+{
+	git_config *config;
+	cl_git_pass(git_repository_config(&config, repo));
+	cl_git_pass(git_config_set_string(config, cfg, value));
+	git_config_free(config);
 }
 
 /* this is essentially the code from git__unescape modified slightly */
@@ -468,7 +477,8 @@ void clar__assert_equal_file(
 			p_snprintf(
 				buf, sizeof(buf), "file content mismatch at byte %d",
 				(int)(total_bytes + pos));
-			clar__fail(file, line, buf, path, 1);
+			p_close(fd);
+			clar__fail(file, line, path, buf, 1);
 		}
 
 		expected_data += bytes;
@@ -481,3 +491,72 @@ void clar__assert_equal_file(
 	clar__assert_equal(file, line, "mismatched file length", 1, "%"PRIuZ,
 		(size_t)expected_bytes, (size_t)total_bytes);
 }
+
+static char *_cl_restore_home = NULL;
+
+void cl_fake_home_cleanup(void *payload)
+{
+	char *restore = _cl_restore_home;
+	_cl_restore_home = NULL;
+
+	GIT_UNUSED(payload);
+
+	if (restore) {
+		cl_git_pass(git_libgit2_opts(
+			GIT_OPT_SET_SEARCH_PATH, GIT_CONFIG_LEVEL_GLOBAL, restore));
+		git__free(restore);
+	}
+}
+
+void cl_fake_home(void)
+{
+	git_buf path = GIT_BUF_INIT;
+
+	cl_git_pass(git_libgit2_opts(
+		GIT_OPT_GET_SEARCH_PATH, GIT_CONFIG_LEVEL_GLOBAL, &path));
+
+	_cl_restore_home = git_buf_detach(&path);
+	cl_set_cleanup(cl_fake_home_cleanup, NULL);
+
+	if (!git_path_exists("home"))
+		cl_must_pass(p_mkdir("home", 0777));
+	cl_git_pass(git_path_prettify(&path, "home", NULL));
+	cl_git_pass(git_libgit2_opts(
+		GIT_OPT_SET_SEARCH_PATH, GIT_CONFIG_LEVEL_GLOBAL, path.ptr));
+	git_buf_free(&path);
+}
+
+void cl_sandbox_set_search_path_defaults(void)
+{
+	const char *sandbox_path = clar_sandbox_path();
+
+	git_libgit2_opts(
+		GIT_OPT_SET_SEARCH_PATH, GIT_CONFIG_LEVEL_GLOBAL, sandbox_path);
+	git_libgit2_opts(
+		GIT_OPT_SET_SEARCH_PATH, GIT_CONFIG_LEVEL_XDG, sandbox_path);
+	git_libgit2_opts(
+		GIT_OPT_SET_SEARCH_PATH, GIT_CONFIG_LEVEL_SYSTEM, sandbox_path);
+}
+
+#ifdef GIT_WIN32
+bool cl_sandbox_supports_8dot3(void)
+{
+	git_buf longpath = GIT_BUF_INIT;
+	char *shortname;
+	bool supported;
+
+	cl_git_pass(
+		git_buf_joinpath(&longpath, clar_sandbox_path(), "longer_than_8dot3"));
+
+	cl_git_write2file(longpath.ptr, "", 0, O_RDWR|O_CREAT, 0666);
+	shortname = git_win32_path_8dot3_name(longpath.ptr);
+
+	supported = (shortname != NULL);
+
+	git__free(shortname);
+	git_buf_free(&longpath);
+
+	return supported;
+}
+#endif
+

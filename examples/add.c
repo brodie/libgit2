@@ -40,7 +40,7 @@ int main (int argc, char** argv)
 	int options = 0, count = 0;
 	struct print_payload payload = {0};
 
-	git_threads_init();
+	git_libgit2_init();
 
 	parse_opts(&options, &count, argc, argv);
 
@@ -66,7 +66,7 @@ int main (int argc, char** argv)
 	git_index_free(index);
 	git_repository_free(repo);
 
-	git_threads_shutdown();
+	git_libgit2_shutdown();
 
 	return 0;
 }
@@ -78,7 +78,7 @@ int print_matched_cb(const char *path, const char *matched_pathspec, void *paylo
 	git_status_t status;
 	(void)matched_pathspec;
 
-	if (git_status_file(&status, p.repo, path)) {
+	if (git_status_file((unsigned int*)(&status), p.repo, path)) {
 		return -1; //abort
 	}
 

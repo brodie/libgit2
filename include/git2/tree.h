@@ -121,11 +121,11 @@ GIT_EXTERN(const git_tree_entry *) git_tree_entry_byindex(
  * Warning: this must examine every entry in the tree, so it is not fast.
  *
  * @param tree a previously loaded tree.
- * @param oid the sha being looked for
+ * @param id the sha being looked for
  * @return the tree entry; NULL if not found
  */
-GIT_EXTERN(const git_tree_entry *) git_tree_entry_byoid(
-	const git_tree *tree, const git_oid *oid);
+GIT_EXTERN(const git_tree_entry *) git_tree_entry_byid(
+	const git_tree *tree, const git_oid *id);
 
 /**
  * Retrieve a tree entry contained in a tree or in any of its subtrees,
@@ -150,10 +150,11 @@ GIT_EXTERN(int) git_tree_entry_bypath(
  * Create a copy of a tree entry. The returned copy is owned by the user,
  * and must be freed explicitly with `git_tree_entry_free()`.
  *
- * @param entry A tree entry to duplicate
- * @return a copy of the original entry or NULL on error (alloc failure)
+ * @param dest pointer where to store the copy
+ * @param source tree entry to duplicate
+ * @return 0 or an error code
  */
-GIT_EXTERN(git_tree_entry *) git_tree_entry_dup(const git_tree_entry *entry);
+GIT_EXTERN(int) git_tree_entry_dup(git_tree_entry **dest, const git_tree_entry *source);
 
 /**
  * Free a user-owned tree entry
@@ -246,11 +247,12 @@ GIT_EXTERN(int) git_tree_entry_to_object(
  * entries and will have to be filled manually.
  *
  * @param out Pointer where to store the tree builder
+ * @param repo Repository in which to store the object
  * @param source Source tree to initialize the builder (optional)
  * @return 0 on success; error code otherwise
  */
-GIT_EXTERN(int) git_treebuilder_create(
-	git_treebuilder **out, const git_tree *source);
+GIT_EXTERN(int) git_treebuilder_new(
+	git_treebuilder **out, git_repository *repo, const git_tree *source);
 
 /**
  * Clear all the entires in the builder
@@ -300,8 +302,10 @@ GIT_EXTERN(const git_tree_entry *) git_treebuilder_get(
  * If an entry named `filename` already exists, its attributes
  * will be updated with the given ones.
  *
- * The optional pointer `out` can be used to retrieve a pointer to
- * the newly created/updated entry.  Pass NULL if you do not need it.
+ * The optional pointer `out` can be used to retrieve a pointer to the
+ * newly created/updated entry.  Pass NULL if you do not need it. The
+ * pointer may not be valid past the next operation in this
+ * builder. Duplicate the entry if you want to keep it.
  *
  * No attempt is being made to ensure that the provided oid points
  * to an existing git object in the object database, nor that the
@@ -365,12 +369,11 @@ GIT_EXTERN(void) git_treebuilder_filter(
  * identifying SHA1 hash will be stored in the `id` pointer.
  *
  * @param id Pointer to store the OID of the newly written tree
- * @param repo Repository in which to store the object
  * @param bld Tree builder to write
  * @return 0 or an error code
  */
 GIT_EXTERN(int) git_treebuilder_write(
-	git_oid *id, git_repository *repo, git_treebuilder *bld);
+	git_oid *id, git_treebuilder *bld);
 
 
 /** Callback for the tree traversal method */

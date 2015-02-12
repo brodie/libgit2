@@ -9,20 +9,13 @@ int cb_status__normal(
 	if (counts->debug)
 		cb_status__print(path, status_flags, NULL);
 
-	if (counts->entry_count >= counts->expected_entry_count) {
+	if (counts->entry_count >= counts->expected_entry_count)
 		counts->wrong_status_flags_count++;
-		goto exit;
-	}
-
-	if (strcmp(path, counts->expected_paths[counts->entry_count])) {
+	else if (strcmp(path, counts->expected_paths[counts->entry_count]))
 		counts->wrong_sorted_path++;
-		goto exit;
-	}
-
-	if (status_flags != counts->expected_statuses[counts->entry_count])
+	else if (status_flags != counts->expected_statuses[counts->entry_count])
 		counts->wrong_status_flags_count++;
 
-exit:
 	counts->entry_count++;
 	return 0;
 }
@@ -88,6 +81,9 @@ int cb_status__print(
 	}
 	if (status_flags & GIT_STATUS_IGNORED) {
 		wstatus = 'I'; wcount++;
+	}
+	if (status_flags & GIT_STATUS_WT_UNREADABLE) {
+		wstatus = 'X'; wcount++;
 	}
 
 	fprintf(stderr, "%c%c %s (%d/%d%s)\n",

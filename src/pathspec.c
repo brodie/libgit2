@@ -83,14 +83,17 @@ int git_pathspec__vinit(
 		if (!match)
 			return -1;
 
-		match->flags = GIT_ATTR_FNMATCH_ALLOWSPACE | GIT_ATTR_FNMATCH_ALLOWNEG;
+		match->flags = GIT_ATTR_FNMATCH_ALLOWSPACE |
+			GIT_ATTR_FNMATCH_ALLOWNEG | GIT_ATTR_FNMATCH_NOLEADINGDIR;
 
 		ret = git_attr_fnmatch__parse(match, strpool, NULL, &pattern);
 		if (ret == GIT_ENOTFOUND) {
 			git__free(match);
 			continue;
-		} else if (ret < 0)
+		} else if (ret < 0) {
+			git__free(match);
 			return ret;
+		}
 
 		if (git_vector_insert(vspec, match) < 0)
 			return -1;
@@ -293,6 +296,9 @@ int git_pathspec_matches_path(
 
 static void pathspec_match_free(git_pathspec_match_list *m)
 {
+	if (!m)
+		return;
+
 	git_pathspec_free(m->pathspec);
 	m->pathspec = NULL;
 
@@ -311,6 +317,9 @@ static git_pathspec_match_list *pathspec_match_alloc(
 		pathspec_match_free(m);
 		m = NULL;
 	}
+
+	if (!m)
+		return NULL;
 
 	/* need to keep reference to pathspec and increment refcount because
 	 * failures array stores pointers to the pattern strings of the
@@ -443,7 +452,7 @@ static int pathspec_match_from_iterator(
 		/* check if path is ignored and untracked */
 		if (index != NULL &&
 			git_iterator_current_is_ignored(iter) &&
-			git_index__find(NULL, index, entry->path, GIT_INDEX_STAGE_ANY) < 0)
+			git_index__find_pos(NULL, index, entry->path, 0, GIT_INDEX_STAGE_ANY) < 0)
 			continue;
 
 		/* mark the matched pattern as used */
@@ -521,7 +530,7 @@ int git_pathspec_match_workdir(
 	assert(repo);
 
 	if (!(error = git_iterator_for_workdir(
-			&iter, repo, pathspec_match_iter_flags(flags), NULL, NULL))) {
+			&iter, repo, NULL, NULL, pathspec_match_iter_flags(flags), NULL, NULL))) {
 
 		error = pathspec_match_from_iterator(out, iter, flags, ps);
 

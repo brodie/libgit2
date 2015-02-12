@@ -196,26 +196,27 @@ GIT_EXTERN(int) git_blob_create_fromchunks(
 /**
  * Write an in-memory buffer to the ODB as a blob
  *
- * @param oid return the oid of the written blob
+ * @param id return the id of the written blob
  * @param repo repository where to blob will be written
  * @param buffer data to be written into the blob
  * @param len length of the data
  * @return 0 or an error code
  */
-GIT_EXTERN(int) git_blob_create_frombuffer(git_oid *oid, git_repository *repo, const void *buffer, size_t len);
+GIT_EXTERN(int) git_blob_create_frombuffer(
+	git_oid *id, git_repository *repo, const void *buffer, size_t len);
 
 /**
  * Determine if the blob content is most certainly binary or not.
  *
  * The heuristic used to guess if a file is binary is taken from core git:
  * Searching for NUL bytes and looking for a reasonable ratio of printable
- * to non-printable characters among the first 4000 bytes.
+ * to non-printable characters among the first 8000 bytes.
  *
  * @param blob The blob which content should be analyzed
  * @return 1 if the content of the blob is detected
  * as binary; 0 otherwise.
  */
-GIT_EXTERN(int) git_blob_is_binary(git_blob *blob);
+GIT_EXTERN(int) git_blob_is_binary(const git_blob *blob);
 
 /** @} */
 GIT_END_DECL

@@ -258,7 +258,7 @@ static int git_tag_create__internal(
 		goto cleanup;
 
 	/** Ensure the tag name doesn't conflict with an already existing
-	 *	reference unless overwriting has explictly been requested **/
+	 *	reference unless overwriting has explicitly been requested **/
 	if (error == 0 && !allow_ref_overwrite) {
 		git_buf_free(&ref_name);
 		giterr_set(GITERR_TAG, "Tag already exists");
@@ -271,7 +271,7 @@ static int git_tag_create__internal(
 	} else
 		git_oid_cpy(oid, git_object_id(target));
 
-	error = git_reference_create(&new_ref, repo, ref_name.ptr, oid, allow_ref_overwrite);
+	error = git_reference_create(&new_ref, repo, ref_name.ptr, oid, allow_ref_overwrite, NULL, NULL);
 
 cleanup:
 	git_reference_free(new_ref);
@@ -363,20 +363,22 @@ int git_tag_create_frombuffer(git_oid *oid, git_repository *repo, const char *bu
 	}
 
 	/* write the buffer */
-	if (git_odb_open_wstream(&stream, odb, strlen(buffer), GIT_OBJ_TAG) < 0)
-		return -1;
+	if ((error = git_odb_open_wstream(
+			&stream, odb, strlen(buffer), GIT_OBJ_TAG)) < 0)
+		return error;
 
-	git_odb_stream_write(stream, buffer, strlen(buffer));
+	if (!(error = git_odb_stream_write(stream, buffer, strlen(buffer))))
+		error = git_odb_stream_finalize_write(oid, stream);
 
-	error = git_odb_stream_finalize_write(oid, stream);
 	git_odb_stream_free(stream);
 
 	if (error < 0) {
 		git_buf_free(&ref_name);
-		return -1;
+		return error;
 	}
 
-	error = git_reference_create(&new_ref, repo, ref_name.ptr, oid, allow_ref_overwrite);
+	error = git_reference_create(
+		&new_ref, repo, ref_name.ptr, oid, allow_ref_overwrite, NULL, NULL);
 
 	git_reference_free(new_ref);
 	git_buf_free(&ref_name);
@@ -404,8 +406,9 @@ int git_tag_delete(git_repository *repo, const char *tag_name)
 	if (error < 0)
 		return error;
 
-	if ((error = git_reference_delete(tag_ref)) == 0)
-		git_reference_free(tag_ref);
+	error = git_reference_delete(tag_ref);
+
+	git_reference_free(tag_ref);
 
 	return error;
 }

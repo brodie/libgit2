@@ -8,9 +8,9 @@
 
 #include "git2/config.h"
 #include "git2/blob.h"
+#include "git2/sys/hashsig.h"
 
 #include "diff.h"
-#include "hashsig.h"
 #include "path.h"
 #include "fileops.h"
 #include "config.h"
@@ -91,7 +91,7 @@ static git_diff_delta *diff_delta__merge_like_cgit(
 		dup->status = a->status;
 	}
 
-	git_oid_cpy(&dup->old_file.oid, &a->old_file.oid);
+	git_oid_cpy(&dup->old_file.id, &a->old_file.id);
 	dup->old_file.mode  = a->old_file.mode;
 	dup->old_file.size  = a->old_file.size;
 	dup->old_file.flags = a->old_file.flags;
@@ -114,7 +114,7 @@ static git_diff_delta *diff_delta__merge_like_cgit_reversed(
 	if ((dup = diff_delta__dup(a, pool)) == NULL)
 		return NULL;
 
-	if (b->status == GIT_DELTA_UNMODIFIED || b->status == GIT_DELTA_UNTRACKED)
+	if (b->status == GIT_DELTA_UNMODIFIED || b->status == GIT_DELTA_UNTRACKED || b->status == GIT_DELTA_UNREADABLE)
 		return dup;
 
 	if (dup->status == GIT_DELTA_DELETED) {
@@ -124,7 +124,7 @@ static git_diff_delta *diff_delta__merge_like_cgit_reversed(
 		dup->status = b->status;
 	}
 
-	git_oid_cpy(&dup->old_file.oid, &b->old_file.oid);
+	git_oid_cpy(&dup->old_file.id, &b->old_file.id);
 	dup->old_file.mode  = b->old_file.mode;
 	dup->old_file.size  = b->old_file.size;
 	dup->old_file.flags = b->old_file.flags;
@@ -218,35 +218,19 @@ int git_diff_merge(git_diff *onto, const git_diff *from)
 int git_diff_find_similar__hashsig_for_file(
 	void **out, const git_diff_file *f, const char *path, void *p)
 {
-	git_hashsig_option_t opt = (git_hashsig_option_t)p;
-	int error = 0;
+	git_hashsig_option_t opt = (git_hashsig_option_t)(intptr_t)p;
 
 	GIT_UNUSED(f);
-	error = git_hashsig_create_fromfile((git_hashsig **)out, path, opt);
-
-	if (error == GIT_EBUFS) {
-		error = 0;
-		giterr_clear();
-	}
-
-	return error;
+	return git_hashsig_create_fromfile((git_hashsig **)out, path, opt);
 }
 
 int git_diff_find_similar__hashsig_for_buf(
 	void **out, const git_diff_file *f, const char *buf, size_t len, void *p)
 {
-	git_hashsig_option_t opt = (git_hashsig_option_t)p;
-	int error = 0;
+	git_hashsig_option_t opt = (git_hashsig_option_t)(intptr_t)p;
 
 	GIT_UNUSED(f);
-	error = git_hashsig_create((git_hashsig **)out, buf, len, opt);
-
-	if (error == GIT_EBUFS) {
-		error = 0;
-		giterr_clear();
-	}
-
-	return error;
+	return git_hashsig_create((git_hashsig **)out, buf, len, opt);
 }
 
 void git_diff_find_similar__hashsig_free(void *sig, void *payload)
@@ -258,8 +242,14 @@ void git_diff_find_similar__hashsig_free(void *sig, void *payload)
 int git_diff_find_similar__calc_similarity(
 	int *score, void *siga, void *sigb, void *payload)
 {
+	int error;
+
 	GIT_UNUSED(payload);
-	*score = git_hashsig_compare(siga, sigb);
+	error = git_hashsig_compare(siga, sigb);
+	if (error < 0)
+		return error;
+
+	*score = error;
 	return 0;
 }
 
@@ -273,6 +263,7 @@ static int normalize_find_opts(
 	const git_diff_find_options *given)
 {
 	git_config *cfg = NULL;
+	git_hashsig_option_t hashsig_opts;
 
 	GITERR_CHECK_VERSION(given, GIT_DIFF_FIND_OPTIONS_VERSION, "git_diff_find_options");
 
@@ -354,11 +345,13 @@ static int normalize_find_opts(
 		opts->metric->similarity = git_diff_find_similar__calc_similarity;
 
 		if (opts->flags & GIT_DIFF_FIND_IGNORE_WHITESPACE)
-			opts->metric->payload = (void *)GIT_HASHSIG_IGNORE_WHITESPACE;
+			hashsig_opts = GIT_HASHSIG_IGNORE_WHITESPACE;
 		else if (opts->flags & GIT_DIFF_FIND_DONT_IGNORE_WHITESPACE)
-			opts->metric->payload = (void *)GIT_HASHSIG_NORMAL;
+			hashsig_opts = GIT_HASHSIG_NORMAL;
 		else
-			opts->metric->payload = (void *)GIT_HASHSIG_SMART_WHITESPACE;
+			hashsig_opts = GIT_HASHSIG_SMART_WHITESPACE;
+		hashsig_opts |= GIT_HASHSIG_ALLOW_SMALL_FILES;
+		opts->metric->payload = (void *)hashsig_opts;
 	}
 
 	return 0;
@@ -375,7 +368,7 @@ static int insert_delete_side_of_split(
 	deleted->nfiles = 1;
 	memset(&deleted->new_file, 0, sizeof(deleted->new_file));
 	deleted->new_file.path = deleted->old_file.path;
-	deleted->new_file.flags |= GIT_DIFF_FLAG_VALID_OID;
+	deleted->new_file.flags |= GIT_DIFF_FLAG_VALID_ID;
 
 	return git_vector_insert(onto, deleted);
 }
@@ -408,7 +401,7 @@ static int apply_splits_and_deletes(
 			delta->nfiles = 1;
 			memset(&delta->old_file, 0, sizeof(delta->old_file));
 			delta->old_file.path = delta->new_file.path;
-			delta->old_file.flags |= GIT_DIFF_FLAG_VALID_OID;
+			delta->old_file.flags |= GIT_DIFF_FLAG_VALID_ID;
 		}
 
 		/* clean up delta before inserting into new list */
@@ -472,7 +465,7 @@ static int similarity_init(
 	info->blob = NULL;
 	git_buf_init(&info->data, 0);
 
-	if (info->file->size > 0)
+	if (info->file->size > 0 || info->src == GIT_ITERATOR_TYPE_WORKDIR)
 		return 0;
 
 	return git_diff_file__resolve_zero_size(
@@ -510,7 +503,7 @@ static int similarity_sig(
 				(git_object **)&info->blob, info->repo,
 				info->odb_obj, GIT_OBJ_BLOB);
 		else
-			error = git_blob_lookup(&info->blob, info->repo, &file->oid);
+			error = git_blob_lookup(&info->blob, info->repo, &file->id);
 
 		if (error < 0) {
 			/* if lookup fails, just skip this item in similarity calc */
@@ -572,21 +565,21 @@ static int similarity_measure(
 
 	/* if exact match is requested, force calculation of missing OIDs now */
 	if (exact_match) {
-		if (git_oid_iszero(&a_file->oid) &&
+		if (git_oid_iszero(&a_file->id) &&
 			diff->old_src == GIT_ITERATOR_TYPE_WORKDIR &&
-			!git_diff__oid_for_file(diff->repo, a_file->path,
-				a_file->mode, a_file->size, &a_file->oid))
-			a_file->flags |= GIT_DIFF_FLAG_VALID_OID;
+			!git_diff__oid_for_file(&a_file->id,
+				diff, a_file->path, a_file->mode, a_file->size))
+			a_file->flags |= GIT_DIFF_FLAG_VALID_ID;
 
-		if (git_oid_iszero(&b_file->oid) &&
+		if (git_oid_iszero(&b_file->id) &&
 			diff->new_src == GIT_ITERATOR_TYPE_WORKDIR &&
-			!git_diff__oid_for_file(diff->repo, b_file->path,
-				b_file->mode, b_file->size, &b_file->oid))
-			b_file->flags |= GIT_DIFF_FLAG_VALID_OID;
+			!git_diff__oid_for_file(&b_file->id,
+				diff, b_file->path, b_file->mode, b_file->size))
+			b_file->flags |= GIT_DIFF_FLAG_VALID_ID;
 	}
 
 	/* check OID match as a quick test */
-	if (git_oid__cmp(&a_file->oid, &b_file->oid) == 0) {
+	if (git_oid__cmp(&a_file->id, &b_file->id) == 0) {
 		*score = 100;
 		return 0;
 	}
@@ -732,6 +725,7 @@ static bool is_rename_source(
 	switch (delta->status) {
 	case GIT_DELTA_ADDED:
 	case GIT_DELTA_UNTRACKED:
+	case GIT_DELTA_UNREADABLE:
 	case GIT_DELTA_IGNORED:
 		return false;
 
@@ -786,6 +780,7 @@ GIT_INLINE(bool) delta_is_new_only(git_diff_delta *delta)
 {
 	return (delta->status == GIT_DELTA_ADDED ||
 			delta->status == GIT_DELTA_UNTRACKED ||
+			delta->status == GIT_DELTA_UNREADABLE ||
 			delta->status == GIT_DELTA_IGNORED);
 }
 
@@ -947,8 +942,6 @@ find_best_matches:
 	 * Rewrite the diffs with renames / copies
 	 */
 
-	tried_tgts = 0;
-
 	git_vector_foreach(&diff->deltas, t, tgt) {
 		/* skip things that are not rename targets */
 		if ((tgt->flags & GIT_DIFF_FLAG__IS_RENAME_TARGET) == 0)
@@ -999,7 +992,7 @@ find_best_matches:
 				memcpy(&src->old_file, &swap, sizeof(src->old_file));
 				memset(&src->new_file, 0, sizeof(src->new_file));
 				src->new_file.path = src->old_file.path;
-				src->new_file.flags |= GIT_DIFF_FLAG_VALID_OID;
+				src->new_file.flags |= GIT_DIFF_FLAG_VALID_ID;
 
 				num_updates++;
 
@@ -1024,7 +1017,7 @@ find_best_matches:
 				src->nfiles = 1;
 				memset(&src->old_file, 0, sizeof(src->old_file));
 				src->old_file.path = src->new_file.path;
-				src->old_file.flags |= GIT_DIFF_FLAG_VALID_OID;
+				src->old_file.flags |= GIT_DIFF_FLAG_VALID_ID;
 
 				src->flags &= ~GIT_DIFF_FLAG__TO_SPLIT;
 				num_rewrites--;

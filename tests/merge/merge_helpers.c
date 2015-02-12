@@ -6,11 +6,12 @@
 #include "merge.h"
 #include "git2/merge.h"
 #include "git2/sys/index.h"
+#include "git2/annotated_commit.h"
 
 int merge_trees_from_branches(
 	git_index **index, git_repository *repo,
 	const char *ours_name, const char *theirs_name,
-	git_merge_tree_opts *opts)
+	git_merge_options *opts)
 {
 	git_commit *our_commit, *their_commit, *ancestor_commit = NULL;
 	git_tree *our_tree, *their_tree, *ancestor_tree = NULL;
@@ -55,7 +56,7 @@ int merge_trees_from_branches(
 int merge_commits_from_branches(
 	git_index **index, git_repository *repo,
 	const char *ours_name, const char *theirs_name,
-	git_merge_tree_opts *opts)
+	git_merge_options *opts)
 {
 	git_commit *our_commit, *their_commit;
 	git_oid our_oid, their_oid;
@@ -79,25 +80,27 @@ int merge_commits_from_branches(
 	return 0;
 }
 
-int merge_branches(git_merge_result **result, git_repository *repo, const char *ours_branch, const char *theirs_branch, git_merge_opts *opts)
+int merge_branches(git_repository *repo,
+	const char *ours_branch, const char *theirs_branch,
+	git_merge_options *merge_opts, git_checkout_options *checkout_opts)
 {
 	git_reference *head_ref, *theirs_ref;
-	git_merge_head *theirs_head;
-	git_checkout_opts head_checkout_opts = GIT_CHECKOUT_OPTS_INIT;
+	git_annotated_commit *theirs_head;
+	git_checkout_options head_checkout_opts = GIT_CHECKOUT_OPTIONS_INIT;
 
 	head_checkout_opts.checkout_strategy = GIT_CHECKOUT_FORCE;
 
-	cl_git_pass(git_reference_symbolic_create(&head_ref, repo, "HEAD", ours_branch, 1));
+	cl_git_pass(git_reference_symbolic_create(&head_ref, repo, "HEAD", ours_branch, 1, NULL, NULL));
 	cl_git_pass(git_checkout_head(repo, &head_checkout_opts));
 
 	cl_git_pass(git_reference_lookup(&theirs_ref, repo, theirs_branch));
-	cl_git_pass(git_merge_head_from_ref(&theirs_head, repo, theirs_ref));
+	cl_git_pass(git_annotated_commit_from_ref(&theirs_head, repo, theirs_ref));
 
-	cl_git_pass(git_merge(result, repo, (const git_merge_head **)&theirs_head, 1, opts));
+	cl_git_pass(git_merge(repo, (const git_annotated_commit **)&theirs_head, 1, merge_opts, checkout_opts));
 
 	git_reference_free(head_ref);
 	git_reference_free(theirs_ref);
-	git_merge_head_free(theirs_head);
+	git_annotated_commit_free(theirs_head);
 
 	return 0;
 }
@@ -112,7 +115,7 @@ void merge__dump_index_entries(git_vector *index_entries)
 		index_entry = index_entries->contents[i];
 
 		printf("%o ", index_entry->mode);
-		printf("%s ", git_oid_allocfmt(&index_entry->oid));
+		printf("%s ", git_oid_allocfmt(&index_entry->id));
 		printf("%d ", git_index_entry_stage(index_entry));
 		printf("%s ", index_entry->path);
 		printf("\n");
@@ -166,7 +169,7 @@ static int index_entry_eq_merge_index_entry(const struct merge_index_entry *expe
 		test_oid = 0;
 
 	if (actual->mode != expected->mode ||
-		(test_oid && git_oid_cmp(&actual->oid, &expected_oid) != 0) ||
+		(test_oid && git_oid_cmp(&actual->id, &expected_oid) != 0) ||
 		git_index_entry_stage(actual) != expected->stage)
 		return 0;
 
@@ -325,7 +328,7 @@ int merge_test_reuc(git_index *index, const struct merge_reuc_entry expected[], 
 
 int dircount(void *payload, git_buf *pathbuf)
 {
-	int *entries = payload;
+	size_t *entries = payload;
 	size_t len = git_buf_len(pathbuf);
 
 	if (len < 5 || strcmp(pathbuf->ptr + (git_buf_len(pathbuf) - 5), "/.git") != 0)

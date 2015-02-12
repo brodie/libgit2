@@ -1,5 +1,6 @@
 #include "clar_libgit2.h"
 #include "diff_helpers.h"
+#include "git2/sys/diff.h"
 
 git_tree *resolve_commit_oid_to_tree(
 	git_repository *repo,
@@ -11,12 +12,9 @@ git_tree *resolve_commit_oid_to_tree(
 	git_tree *tree = NULL;
 
 	if (git_oid_fromstrn(&oid, partial_oid, len) == 0)
-		git_object_lookup_prefix(&obj, repo, &oid, len, GIT_OBJ_ANY);
-	cl_assert(obj);
-	if (git_object_type(obj) == GIT_OBJ_TREE)
-		return (git_tree *)obj;
-	cl_assert(git_object_type(obj) == GIT_OBJ_COMMIT);
-	cl_git_pass(git_commit_tree(&tree, (git_commit *)obj));
+		cl_git_pass(git_object_lookup_prefix(&obj, repo, &oid, len, GIT_OBJ_ANY));
+
+	cl_git_pass(git_object_peel((git_object **) &tree, obj, GIT_OBJ_TREE));
 	git_object_free(obj);
 	return tree;
 }
@@ -215,32 +213,16 @@ abort:
 	return GIT_EUSER;
 }
 
-static int diff_print_cb(
-	const git_diff_delta *delta,
-	const git_diff_hunk *hunk,
-	const git_diff_line *line,
-	void *payload)
-{
-	FILE *fp = payload;
-
-	GIT_UNUSED(delta); GIT_UNUSED(hunk);
-
-	if (line->origin == GIT_DIFF_LINE_CONTEXT ||
-		line->origin == GIT_DIFF_LINE_ADDITION ||
-		line->origin == GIT_DIFF_LINE_DELETION)
-		fputc(line->origin, fp);
-	fwrite(line->content, 1, line->content_len, fp);
-	return 0;
-}
-
 void diff_print(FILE *fp, git_diff *diff)
 {
-	cl_git_pass(git_diff_print(
-		diff, GIT_DIFF_FORMAT_PATCH, diff_print_cb, fp ? fp : stderr));
+	cl_git_pass(
+		git_diff_print(diff, GIT_DIFF_FORMAT_PATCH,
+			git_diff_print_callback__to_file_handle, fp ? fp : stderr));
 }
 
 void diff_print_raw(FILE *fp, git_diff *diff)
 {
-	cl_git_pass(git_diff_print(
-		diff, GIT_DIFF_FORMAT_RAW, diff_print_cb, fp ? fp : stderr));
+	cl_git_pass(
+		git_diff_print(diff, GIT_DIFF_FORMAT_RAW,
+			git_diff_print_callback__to_file_handle, fp ? fp : stderr));
 }

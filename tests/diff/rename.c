@@ -381,37 +381,53 @@ void test_diff_rename__not_exact_match(void)
 	git_tree_free(new_tree);
 }
 
-void test_diff_rename__handles_small_files(void)
+void test_diff_rename__test_small_files(void)
 {
-	const char *tree_sha = "2bc7f351d20b53f1c72c16c4b036e491c478c49a";
 	git_index *index;
-	git_tree *tree;
+	git_reference *head_reference;
+	git_commit *head_commit;
+	git_tree *head_tree;
+	git_tree *commit_tree;
+	git_signature *signature;
 	git_diff *diff;
-	git_diff_options diffopts = GIT_DIFF_OPTIONS_INIT;
-	git_diff_find_options opts = GIT_DIFF_FIND_OPTIONS_INIT;
+	git_oid oid;
+	const git_diff_delta *delta;
+	git_diff_options diff_options = GIT_DIFF_OPTIONS_INIT;
+	git_diff_find_options find_options = GIT_DIFF_FIND_OPTIONS_INIT;
 
 	cl_git_pass(git_repository_index(&index, g_repo));
 
-	tree = resolve_commit_oid_to_tree(g_repo, tree_sha);
+	cl_git_mkfile("renames/small.txt", "Hello World!\n");
+	cl_git_pass(git_index_add_bypath(index, "small.txt"));
 
-	cl_git_rewritefile("renames/songof7cities.txt", "single line\n");
-	cl_git_pass(git_index_add_bypath(index, "songof7cities.txt"));
+	cl_git_pass(git_repository_head(&head_reference, g_repo));
+	cl_git_pass(git_reference_peel((git_object**)&head_commit, head_reference, GIT_OBJ_COMMIT));
+	cl_git_pass(git_commit_tree(&head_tree, head_commit));
+	cl_git_pass(git_index_write_tree(&oid, index));
+	cl_git_pass(git_tree_lookup(&commit_tree, g_repo, &oid));
+	cl_git_pass(git_signature_new(&signature, "Rename", "rename@example.com", 1404157834, 0));
+	cl_git_pass(git_commit_create(&oid, g_repo, "HEAD", signature, signature, NULL, "Test commit", commit_tree, 1, (const git_commit**)&head_commit));
 
-	cl_git_rewritefile("renames/untimely.txt", "untimely\n");
-	cl_git_pass(git_index_add_bypath(index, "untimely.txt"));
+	cl_git_mkfile("renames/copy.txt", "Hello World!\n");
+	cl_git_rmfile("renames/small.txt");
 
-	/* Tests that we can invoke find_similar on small files
-	 * and that the GIT_EBUFS (too small) error code is not
-	 * propagated to the caller.
-	 */
-	cl_git_pass(git_diff_tree_to_index(&diff, g_repo, tree, index, &diffopts));
+	diff_options.flags = GIT_DIFF_INCLUDE_UNTRACKED;
+	cl_git_pass(git_diff_tree_to_workdir(&diff, g_repo, commit_tree, &diff_options));
+	find_options.flags = GIT_DIFF_FIND_RENAMES | GIT_DIFF_FIND_FOR_UNTRACKED;
+	cl_git_pass(git_diff_find_similar(diff, &find_options));
 
-	opts.flags = GIT_DIFF_FIND_RENAMES | GIT_DIFF_FIND_COPIES |
-		GIT_DIFF_FIND_AND_BREAK_REWRITES;
-	cl_git_pass(git_diff_find_similar(diff, &opts));
+	cl_assert_equal_i(git_diff_num_deltas(diff), 1);
+	delta = git_diff_get_delta(diff, 0);
+	cl_assert_equal_i(delta->status, GIT_DELTA_RENAMED);
+	cl_assert_equal_s(delta->old_file.path, "small.txt");
+	cl_assert_equal_s(delta->new_file.path, "copy.txt");
 
 	git_diff_free(diff);
-	git_tree_free(tree);
+	git_signature_free(signature);
+	git_tree_free(commit_tree);
+	git_tree_free(head_tree);
+	git_commit_free(head_commit);
+	git_reference_free(head_reference);
 	git_index_free(index);
 }
 
@@ -584,7 +600,7 @@ void test_diff_rename__patch(void)
 	git_diff_find_options opts = GIT_DIFF_FIND_OPTIONS_INIT;
 	git_patch *patch;
 	const git_diff_delta *delta;
-	char *text;
+	git_buf buf = GIT_BUF_INIT;
 	const char *expected = "diff --git a/sixserving.txt b/ikeepsix.txt\nindex ad0a8e5..36020db 100644\n--- a/sixserving.txt\n+++ b/ikeepsix.txt\n@@ -1,3 +1,6 @@\n+I Keep Six Honest Serving-Men\n+=============================\n+\n I KEEP six honest serving-men\n  (They taught me all I knew);\n Their names are What and Why and When\n@@ -21,4 +24,4 @@ She sends'em abroad on her own affairs,\n One million Hows, two million Wheres,\n And seven million Whys!\n \n-                -- Rudyard Kipling\n+  -- Rudyard Kipling\n";
 
 	old_tree = resolve_commit_oid_to_tree(g_repo, sha0);
@@ -610,9 +626,9 @@ void test_diff_rename__patch(void)
 	cl_assert((delta = git_patch_get_delta(patch)) != NULL);
 	cl_assert_equal_i(GIT_DELTA_COPIED, (int)delta->status);
 
-	cl_git_pass(git_patch_to_str(&text, patch));
-	cl_assert_equal_s(expected, text);
-	git__free(text);
+	cl_git_pass(git_patch_to_buf(&buf, patch));
+	cl_assert_equal_s(expected, buf.ptr);
+	git_buf_free(&buf);
 
 	git_patch_free(patch);
 
@@ -929,7 +945,7 @@ void test_diff_rename__rejected_match_can_match_others(void)
 	git_reference *head, *selfsimilar;
 	git_index *index;
 	git_tree *tree;
-	git_checkout_opts opts = GIT_CHECKOUT_OPTS_INIT;
+	git_checkout_options opts = GIT_CHECKOUT_OPTIONS_INIT;
 	git_diff *diff;
 	git_diff_options diffopts = GIT_DIFF_OPTIONS_INIT;
 	git_diff_find_options findopts = GIT_DIFF_FIND_OPTIONS_INIT;
@@ -945,7 +961,7 @@ void test_diff_rename__rejected_match_can_match_others(void)
 
 	cl_git_pass(git_reference_lookup(&head, g_repo, "HEAD"));
 	cl_git_pass(git_reference_symbolic_set_target(
-		&selfsimilar, head, "refs/heads/renames_similar"));
+		&selfsimilar, head, "refs/heads/renames_similar", NULL, NULL));
 	cl_git_pass(git_checkout_head(g_repo, &opts));
 	cl_git_pass(git_repository_index(&index, g_repo));
 
@@ -1016,7 +1032,7 @@ void test_diff_rename__rejected_match_can_match_others_two(void)
 	git_reference *head, *selfsimilar;
 	git_index *index;
 	git_tree *tree;
-	git_checkout_opts opts = GIT_CHECKOUT_OPTS_INIT;
+	git_checkout_options opts = GIT_CHECKOUT_OPTIONS_INIT;
 	git_diff *diff;
 	git_diff_options diffopts = GIT_DIFF_OPTIONS_INIT;
 	git_diff_find_options findopts = GIT_DIFF_FIND_OPTIONS_INIT;
@@ -1030,7 +1046,7 @@ void test_diff_rename__rejected_match_can_match_others_two(void)
 
 	cl_git_pass(git_reference_lookup(&head, g_repo, "HEAD"));
 	cl_git_pass(git_reference_symbolic_set_target(
-		&selfsimilar, head, "refs/heads/renames_similar_two"));
+		&selfsimilar, head, "refs/heads/renames_similar_two", NULL, NULL));
 	cl_git_pass(git_checkout_head(g_repo, &opts));
 	cl_git_pass(git_repository_index(&index, g_repo));
 
@@ -1072,7 +1088,7 @@ void test_diff_rename__rejected_match_can_match_others_three(void)
 	git_reference *head, *selfsimilar;
 	git_index *index;
 	git_tree *tree;
-	git_checkout_opts opts = GIT_CHECKOUT_OPTS_INIT;
+	git_checkout_options opts = GIT_CHECKOUT_OPTIONS_INIT;
 	git_diff *diff;
 	git_diff_options diffopts = GIT_DIFF_OPTIONS_INIT;
 	git_diff_find_options findopts = GIT_DIFF_FIND_OPTIONS_INIT;
@@ -1088,7 +1104,7 @@ void test_diff_rename__rejected_match_can_match_others_three(void)
 
 	cl_git_pass(git_reference_lookup(&head, g_repo, "HEAD"));
 	cl_git_pass(git_reference_symbolic_set_target(
-		&selfsimilar, head, "refs/heads/renames_similar_two"));
+		&selfsimilar, head, "refs/heads/renames_similar_two", NULL, NULL));
 	cl_git_pass(git_checkout_head(g_repo, &opts));
 	cl_git_pass(git_repository_index(&index, g_repo));
 

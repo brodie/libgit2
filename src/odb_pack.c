@@ -210,7 +210,7 @@ static int packfile_load__cb(void *data, git_buf *path)
 			return 0;
 	}
 
-	error = git_packfile_alloc(&pack, path->ptr);
+	error = git_mwindow_get_pack(&pack, path->ptr);
 
 	/* ignore missing .pack file as git does */
 	if (error == GIT_ENOTFOUND) {
@@ -493,6 +493,23 @@ static int pack_backend__exists(git_odb_backend *backend, const git_oid *oid)
 	return pack_entry_find(&e, (struct pack_backend *)backend, oid) == 0;
 }
 
+static int pack_backend__exists_prefix(
+	git_oid *out, git_odb_backend *backend, const git_oid *short_id, size_t len)
+{
+	int error;
+	struct pack_backend *pb = (struct pack_backend *)backend;
+	struct git_pack_entry e = {0};
+
+	error = pack_entry_find_prefix(&e, pb, short_id, len);
+
+	if (error == GIT_ENOTFOUND && !(error = pack_backend__refresh(backend)))
+		error = pack_entry_find_prefix(&e, pb, short_id, len);
+
+	git_oid_cpy(out, &e.sha1);
+
+	return error;
+}
+
 static int pack_backend__foreach(git_odb_backend *_backend, git_odb_foreach_cb cb, void *data)
 {
 	int error;
@@ -546,7 +563,7 @@ static void pack_backend__writepack_free(struct git_odb_writepack *_writepack)
 static int pack_backend__writepack(struct git_odb_writepack **out,
 	git_odb_backend *_backend,
         git_odb *odb,
-	git_transfer_progress_callback progress_cb,
+	git_transfer_progress_cb progress_cb,
 	void *progress_payload)
 {
 	struct pack_backend *backend;
@@ -588,7 +605,7 @@ static void pack_backend__free(git_odb_backend *_backend)
 
 	for (i = 0; i < backend->packs.length; ++i) {
 		struct git_pack_file *p = git_vector_get(&backend->packs, i);
-		git_packfile_free(p);
+		git_mwindow_put_pack(p);
 	}
 
 	git_vector_free(&backend->packs);
@@ -612,6 +629,7 @@ static int pack_backend__alloc(struct pack_backend **out, size_t initial_size)
 	backend->parent.read_prefix = &pack_backend__read_prefix;
 	backend->parent.read_header = &pack_backend__read_header;
 	backend->parent.exists = &pack_backend__exists;
+	backend->parent.exists_prefix = &pack_backend__exists_prefix;
 	backend->parent.refresh = &pack_backend__refresh;
 	backend->parent.foreach = &pack_backend__foreach;
 	backend->parent.writepack = &pack_backend__writepack;
@@ -629,7 +647,7 @@ int git_odb_backend_one_pack(git_odb_backend **backend_out, const char *idx)
 	if (pack_backend__alloc(&backend, 1) < 0)
 		return -1;
 
-	if (git_packfile_alloc(&packfile, idx) < 0 ||
+	if (git_mwindow_get_pack(&packfile, idx) < 0 ||
 		git_vector_insert(&backend->packs, packfile) < 0)
 	{
 		pack_backend__free((git_odb_backend *)backend);
@@ -645,6 +663,9 @@ int git_odb_backend_pack(git_odb_backend **backend_out, const char *objects_dir)
 	int error = 0;
 	struct pack_backend *backend = NULL;
 	git_buf path = GIT_BUF_INIT;
+
+	if (git_mwindow_files_init() < 0)
+		return -1;
 
 	if (pack_backend__alloc(&backend, 8) < 0)
 		return -1;
